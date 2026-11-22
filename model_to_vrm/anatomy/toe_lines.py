@@ -4,6 +4,7 @@
   instances   the instances SAM 3 is sure of: one Otsu split of the scores pooled over all views.
   on the mesh each instance -> the foot's vertices visible in that view (nearest surface per pixel block, within two mesh
               edges) whose pixel lies in the mask.
+  several     an instance that covers two or more separate instances of another view is several toes at once; left out
   same toe    two instances from different views are the same toe when most of the smaller one's vertices are in the
               other; groups of linked instances seen in most of the views are toes. A vertex belongs to the toe most
               of its views say.
@@ -36,6 +37,16 @@ for name in views:
         ii = np.flatnonzero(vis & M[k][pi[:, 1], pi[:, 0]])
         if len(ii): inst.append((name, float(S[k]), ii))
     log('%s: %d instances above the split (%.2f): scores %s' % (name, len(keep), TH, np.round(np.sort(S[keep])[::-1], 2).tolist()))
+# an instance that covers two or more separate instances of another view is a mask of several toes at once (SAM 3 also
+# returns "the toes" as one instance); kept, it would link every toe into one group, so it is dropped
+sets = [set(i[2].tolist()) for i in inst]; same = lambda a_, b_: len(sets[a_] & sets[b_]) > 0.5 * min(len(sets[a_]), len(sets[b_]))
+multi = set()
+for a_ in range(len(inst)):
+    for w in {i[0] for i in inst} - {inst[a_][0]}:
+        inside = [b_ for b_ in range(len(inst)) if inst[b_][0] == w and len(sets[a_] & sets[b_]) > 0.5 * len(sets[b_]) and len(sets[b_]) < len(sets[a_])]
+        if any(not same(b1, b2) for i1, b1 in enumerate(inside) for b2 in inside[i1 + 1:]): multi.add(a_); break
+if multi: log('%d instances cover several toes at once; left out' % len(multi))
+inst = [x for k_, x in enumerate(inst) if k_ not in multi]
 n = len(inst); sets = [set(i[2].tolist()) for i in inst]; rows, cols = [], []
 for a in range(n):
     for b in range(a + 1, n):

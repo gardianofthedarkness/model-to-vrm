@@ -23,7 +23,13 @@ def one(g):
     k = str(g['sub'])
     q = Q.format(ma=g['A']['material'], ca=g['A']['concepts'], mb=g['B']['material'], cb=g['B']['concepts'], ja=g['A']['near_joint'], jb=g['B']['near_joint'], gap=round(g['gap_median_m'] * 1000, 1))
     card = os.path.join(D, 'sub_cards', 'sub_%s.jpg' % k)
-    r = subprocess.run([PY, RUN, '--no-session', '-p', '@' + card, q], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=600)
+    r = None
+    for attempt in range(2):                                        # a call that hangs is tried once more; a second hang is recorded as an error, not a crash
+        try: r = subprocess.run([PY, RUN, '--no-session', '-p', '@' + card, q], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=600); break
+        except subprocess.TimeoutExpired: print('SL sub %s: no answer within 600 s (attempt %d)' % (k, attempt + 1), flush=True)
+    if r is None:
+        with lock: done[k] = {'error': 'timed out twice'}; json.dump(done, open(out_p, 'w'), indent=1)
+        return
     m = re.search(r'\{.*\}', r.stdout, re.S)
     try: ans = json.loads(m.group(0)) if m else {'error': r.stdout[-300:] + r.stderr[-300:]}
     except Exception: ans = {'error': 'bad json: ' + m.group(0)[:300]}
