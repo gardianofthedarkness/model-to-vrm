@@ -1,242 +1,262 @@
-# Interior model: mathematical construction and research handout (version 4)
+# Interior model: mathematical construction and research handout (version 5)
 
-**Status: a proposal, not a built system.** Nothing here has been trained or tested. Version 4 follows five rounds of outside review, a census of the data we can obtain, and a report on skin-attachment mechanics supplied by the user. Section 1 records what changed; section 12 holds the open disagreements; section 14 lists what nobody has verified.
+**Status: a proposal, not a built system.** Nothing here has been trained or tested. Version 5 follows six rounds of outside review, a census of the data we can obtain, and a report on skin-attachment mechanics supplied by the user. Section 1 records what changed; section 13 holds the open positions; section 15 lists what nobody has verified.
 
 ## 0. Purpose
 
-We fit an anatomy atlas (bones, muscles) inside a generated 3D character by least squares and convex optimisation. The optimiser knows hard rules (bones inside the body, seams closed, left and right alike) but little about where tissue lies under a given surface. We want a learned model of how bodies are built, **with every part in the context of all the others**, with calibrated uncertainty, in a form the optimiser uses directly.
+We fit an anatomy atlas (bones, muscles) inside a generated 3D character by least squares and convex optimisation. The optimiser knows hard rules (bones inside the body, seams closed, left and right alike) but little about where tissue lies under a given surface. We want a learned model of how bodies are built, **with every part in the context of all the others**, with calibrated uncertainty, in a form the optimiser uses directly, and ending in a figure that can be animated.
 
-The user's requirements: cross-sections ("critical slices") at important places are the working currency; all predictions for one person share context; confident predictions guide the optimiser; a transformer with diffusion is the preferred family; the input character is clothed, with cloth kept close to the body where the user can arrange it.
+The user's requirements: cross-sections ("critical slices") at important places are the working currency; all predictions for one person share context; confident predictions guide the optimiser; a transformer with diffusion is the preferred family; the input character is clothed, with cloth kept close to the body where the user can arrange it; the result must serve as a rig.
 
-## 1. What changed from version 3, and why
+## 1. What changed from version 4, and why
 
 | # | Point | Verdict | Where it lands |
 |---|---|---|---|
-| 1 | Version 3 used the outer surface twice: once to predict $p(z \mid \mathcal O)$ and again as a likelihood $p(\mathcal O \mid z)$ in the optimiser. A tight sleeve would narrow the arm twice and the result would be overconfident. | **Accepted: the main error of version 3.** | Section 6: one construction, the exterior used once. |
-| 2 | The body's state was bones only. A thicker thigh could then only be explained by a larger femur. | **Accepted.** | Section 3: layered state (bone, deep fascia, skin). |
-| 3 | "How much tissue is there" and "how tissue has moved" are different. So are "skin to first lean tissue", "skin to fascia" and "fat thickness". | **Accepted.** | Sections 3 and 4. |
-| 4 | Clothing claims overstated: a hem step is an edge offset, not fabric thickness; a flat panel may cover flat skin or a hollow of any depth; the curvature bound was stated backwards; a waistband can press skin in at zero gap. | **Accepted, including the reversed bound (my error).** | Section 5. |
-| 5 | Two outfits giving one skeleton shows repeatability, not accuracy. The strong test puts two outfits on one known body. | **Accepted.** | Section 10. |
-| 6 | Convexity holds only with fixed normals and correspondences. | **Accepted.** | Section 7.4. |
-| 7 | A diffusion head cannot be trained "through $H_p$" when the clean latent is unknown. A direction's variance can be learned while its correlation with another cannot. | **Accepted.** | Sections 9.2 and 9.3. |
-| 8 | A surface stylisation warp does not determine how bone follows it. | **Accepted**: stylisation becomes an explicit policy (section 12.3). | |
-| 9 | The handout asked for keypoints on renders of CT skin and also forbade rendering faces. | **A real contradiction; the user's decision.** | Section 13, question U3. |
-| 10 | Skin-attachment mechanics (the user's report): an interface energy between skin and deeper tissue, a membrane energy in the skin, and a transfer length. | **Adopted in reduced form**, with its own warning that the parameters are not identifiable from one static scan. | Section 4. |
-| 11 | Start with one thigh region. | **Accepted.** | Section 10. |
+| 1 | The garment equation was stated ($q = $ skin $+\,c\,\nu$) but not enforced: the objective penalised a free clearance $c$, so the solver could choose a comfortable gap without moving the skin to the cloth. | **Accepted: the main error of version 4.** | Sections 3.3 and 7.2: the clearance is computed from the geometry, not a free variable. |
+| 2 | Adipose thickness was defined from CT, but the state held only two thicknesses, so fat could not be read out at inference. | **Accepted.** | Section 3.1: an adipose fraction. |
+| 3 | "Reference" meant supine-as-scanned in training and unclothed-unloaded at inference. Those are different targets, and one clothed observation cannot separate reference thickness, posture and clothing. | **Accepted.** | Section 3.1: one declared reference posture; standing is a separate experiment. |
+| 4 | A minimiser is one estimate, not a posterior. Coverage tests need an explicit uncertainty calculation. | **Accepted.** | Section 8. |
+| 5 | The transfer length does not set how strongly the mechanics competes with the data; the normal-to-tangential ratio is separate; the membrane term charges rigid rotation. | **Accepted.** | Section 3.2. |
+| 6 | Normal-offset layers keep their order along each line, but neighbouring lines can cross. | **Accepted as a check.** | Section 3.1. |
+| 7 | The reviewer now prefers construction (I), prior plus one likelihood, because with explicit layers one can inspect why a sleeve changed the femur. | **Agreed; no longer a disagreement.** | Section 6. |
+| 8 | Acceptance test: the exterior fixes only total soft-tissue thickness; revealing one fascia contour should narrow the muscle-fat split without moving the femur. | **Adopted.** | Section 11, T1b. |
+| 9 | Feasibility depends on how many people have a usable thigh with femur, skin and enough visible fascia. | **Open fact; a count is needed.** | Section 12. |
+| 10 | The user's question: once bone-to-skin connection and tissue physics exist, is the figure rigged for animation? | **Yes, with conditions.** | Section 10 (new). |
+| 11 | User decisions: anonymised research CT kept private, and face renders inside private jobs, are acceptable (as I read the user's reply "Acceptable to me"). | Recorded. | Section 14. |
 
-Kept from version 3: one shared anatomical state per person; every slice cut from it; planes from the outer surface only; training against measurements, not against our own fits; the three-part oracle test; Gaussian, mixture and diffusion compared on equal terms; body first because faces are scarce.
+Kept from version 4: the three-part state; training against measurements; the three-part oracle test; clothing as one-sided observations calibrated on paired data; Gaussian, mixture and diffusion compared on equal terms; body first because faces are scarce.
 
 ## 2. Objects and notation
 
-**Person and size.** Person or figure $p$; observed outer surface $\mathcal O_p$ with material labels (skin, cloth, hair, prop); person facts $g_p$ (sex, age, size, each with a known/unknown flag). Lengths are proportions of a size $S_p$ measurable from the outer surface.
+Person or figure $p$; observed outer surface $\mathcal O_p$ with material labels; person facts $g_p$ with known/unknown flags; lengths as proportions of a surface-measurable size $S_p$. An atlas template with bones, muscles and three nested surfaces per region: bone $\Gamma^{B}$, deep fascia $\Gamma^{F}$, skin $\Gamma^{S}$; template skin points $X \in \Gamma^{S}_0$ with unit normals $n(X)$. Slice planes $\Pi_k$ from the outer surface only.
 
-**Atlas.** A template with bones, muscles, and three nested surfaces per region: bone $\Gamma^{B}$, deep fascia $\Gamma^{F}$ (the envelope of the muscle compartment), skin $\Gamma^{S}$. Points of the template skin are $X \in \Gamma^{S}_0$ with unit normal $n(X)$.
+Three depths are distinct and are never substituted for one another: skin to fascia $d^{SF}$, skin to bone $d^{SB}$, and adipose thickness $d^{\text{fat}}$ (the length of a ray, between skin and fascia, occupied by fat).
 
-**Planes and readouts.** Planes $\Pi_k$ from the outer surface only. On a plane and along each ray: the observed radius $\rho^{\text{obs}}$; the model's current skin radius; the fascia and bone radii; and three distinct depths: skin to fascia $d^{SF}$, skin to bone $d^{SB}$, and adipose thickness
-$$ d^{\text{fat}} = \int_{\text{skin}}^{\text{deep fascia}} P(\text{adipose at } x \mid \text{CT})\, d\ell , $$
-the length of the ray occupied by fat between skin and fascia. Fat deeper than the fascia is a separate compartment.
+## 3. The state
 
-## 3. The state: three parts
+$$ z = \big( z^{\text{ref}},\; u \big), \qquad \text{with the garment clearance a function of } z \text{ and the observation (3.3).} $$
 
-$$ z = \big( z^{\text{ref}},\; u,\; c \big). $$
+### 3.1 Reference anatomy $z^{\text{ref}}$
 
-### 3.1 Reference anatomy $z^{\text{ref}}$: how this person is built
+**Bone** $z^{B}$: the fit's deformation parameters in canonical form (global pose and size removed, minimum-norm representative, area-weighted displacement norm).
 
-- **Bone**: the deformation parameters of the fit (deformation graph for the skull, jointed bones with size and stretches for the body), in canonical form (global pose and size removed, minimum-norm representative, area-weighted displacement norm).
-- **Soft-tissue thickness fields on the template skin**: lean thickness $t^{L}(X) \ge 0$ from bone-carried support to fascia and subcutaneous thickness $t^{F}(X) \ge 0$ from fascia to skin, so that
-  $$ \Gamma^{F}_{\text{ref}}(X) = b(X; z^{B}) + t^{L}(X)\, n(X), \qquad \Gamma^{S}_{\text{ref}}(X) = \Gamma^{F}_{\text{ref}}(X) + t^{F}(X)\, n(X), $$
-  with $b(X; z^{B})$ the point the bone state carries. Two people with the same femur and different thighs differ in $t^{L}, t^{F}$, not in $z^{B}$.
-- **Reduced coordinates**: $z^{\text{ref}} = \bar z + W a + \eta$ with one joint basis over bone parameters and (log) thickness fields, so that their covariance is learned: a thick thigh informs the femur only as far as the population says it does. The surface alone often cannot tell more muscle from more fat; that ambiguity is a direction of $a$ with large conditional variance and must survive into the result.
+**Layer thickness fields** on the template skin: lean thickness $t^{L}(X) \ge 0$ (bone-carried support to fascia) and subcutaneous thickness $t^{F}(X) \ge 0$ (fascia to skin):
+$$ \Gamma^{F}_{\text{ref}}(X) = b(X; z^{B}) + t^{L}(X)\, n(X), \qquad \Gamma^{S}_{\text{ref}}(X) = \Gamma^{F}_{\text{ref}}(X) + t^{F}(X)\, n(X). $$
+Positive offsets keep the order bone, fascia, skin along each line; they do not prevent neighbouring lines from crossing, so reconstructed layers are checked for crossings and inverted elements. Independently deformable fascia and skin surfaces replace the offsets only if the oracle test shows a real failure.
 
-The reference configuration is **the body as scanned** (supine, unclothed) for training, and **the character's own unclothed, unloaded body** at inference. A static scan cannot separate a person's unloaded shape from pre-stress; the reference is a convention, not a stress-free state.
+**Adipose fraction** $f^{A}(X) \in [0,1]$: the share of the subcutaneous layer that is fat, so that the model's own readout is
+$$ d^{\text{fat}}(X) = f^{A}(X)\, t^{F}(X), $$
+supervised by the CT-measured $d^{\text{fat}}$ on valid rays, or by a regional integral where CT supports only a regional measurement. If the usable scans support neither, $t^{F}$ is reported as "subcutaneous-layer thickness" and no fat claim is made.
 
-### 3.2 Tissue displacement $u$: how the tissue has moved from the reference
+**Reference posture.** One declared posture for the pilot: **supine, unclothed, as scanned**, used in training and in evaluation alike. Transfer to a standing character is a separate experiment (section 11, T7), not an assumption.
 
-$u_s(X)$ is the displacement of the current skin from the reference skin and $u_d(X)$ that of the deeper support (fascia), under posture, load or a tight band. With the jump $g_\Gamma = u_s - u_d$, the user's report gives the reduced interface energy
-$$ E_\Gamma = \frac12 \int_{\Gamma_0} \Big[ \kappa_t \big\| (I - n n^\top)\, g_\Gamma \big\|^2 + \kappa_n \big(n^\top g_\Gamma\big)^2 \Big]\, dA , $$
-separate costs for sliding and for normal separation, and a membrane energy for the skin itself,
-$$ E_S = \frac12 \int_{\Gamma_0} S\, \| \nabla_\Gamma u_s \|^2\, dA . $$
-For a strip pulled at one end the displacement decays as $u(x) = u(0)\, e^{-x/\ell_s}$ with transfer length
-$$ \ell_s = \sqrt{S / \kappa_t} . $$
-Three properties matter here. Skin and deeper tissue can move together at no cost. The quadratic forms are convex in $u$ for fixed normals. And a displacement profile identifies only the ratio $S/\kappa_t$, never the two stiffnesses separately; a single static scan identifies neither. The report's numbers are illustrative calculations, not measurements, and are **not** used.
+**Reduced coordinates.** $z^{\text{ref}} = \bar z + W a + \eta$ with one joint basis over bone parameters, log-thicknesses and the logit of $f^{A}$.
 
-For fat under compression, a tracked patch of reference thickness $h_0$ and area ratio $J_A$ satisfies $h\, J_A \approx h_0$ (near-incompressibility): a band that thins the layer by 20% spreads it by 25%. This is enforced, if at all, as a volume condition over a 3D region; thickness on a fixed slice is read off afterwards, since tissue also moves through the plane.
+**What the exterior cannot know.** Locally the surface observes $b + t^{L} + t^{F}$. The direction $(\delta t^{L}, \delta t^{F}) = (+\epsilon, -\epsilon)$ leaves the surface unchanged: the split between muscle and fat is not observed from outside, and its uncertainty must survive into the result (section 8.1 makes this exact).
 
-**Scope in the pilot.** On CT, $u = 0$ by definition of the reference. $u$ is non-zero only where the input shows deformation that the reference cannot explain: a groove at an elastic edge, an indentation. There $u$ is regularised by $E_\Gamma + E_S$ with the single unknown $\ell_s$ per region, which stays an uncertain quantity until paired loading data exist (12.2).
+### 3.2 Tissue displacement $u$
 
-### 3.3 Garment clearance $c$: the gap between current skin and cloth
+$u_s(X)$: displacement of current skin from reference skin; $u_d(X)$: displacement of the deeper support; jump $g_\Gamma = u_s - u_d$. From the user's report, in reduced form:
+$$ E_\Gamma = \frac{\alpha}{2} \int_{\Gamma_0} \Big[ \big\| (I - n n^\top) g_\Gamma \big\|^2 + r_n \big( n^\top g_\Gamma \big)^2 \Big] dA, \qquad E_S = \frac{\alpha\, \ell_s^2}{2} \int_{\Gamma_0} \| \nabla_\Gamma \tilde u_s \|^2\, dA , $$
+written so that its three independent unknowns are visible: the overall strength $\alpha$ (how hard the mechanics competes with the data), the normal-to-tangential ratio $r_n = \kappa_n / \kappa_t$, and the transfer length $\ell_s = \sqrt{S/\kappa_t}$ (how far a tangential pull spreads, $u(x) = u(0)\, e^{-x/\ell_s}$ on a strip). A displacement profile identifies $\ell_s$ only; $\alpha$ and $r_n$ need force or paired-load data. None is identifiable from one static scan, and none is set by hand: each carries a prior and enters the sensitivity analysis separately.
 
-$$ q = \Gamma^{S}_{\text{ref}}(X) + u_s(X) + c(X)\, \nu, \qquad c(X) \ge 0 , $$
-for an observed cloth point $q$ with correspondence $X$ and outward direction $\nu$. A waistband pressing the skin in is $u_s < 0$ with $c \approx 0$; a loose waistband is $u_s = 0$ with $c > 0$. One gap variable could not express both.
+$\tilde u_s$ is $u_s$ with its best-fitting rigid motion removed, for a fixed pose. For pose transfer the membrane term must be co-rotated or written in surface strain; otherwise a rotation is charged as stretch.
+
+For fat under compression, a tracked patch with reference thickness $h_0$ and area ratio $J_A$ obeys $h\, J_A \approx h_0$; this is a volume condition over a 3D region, read off on slices afterwards.
+
+**Scope in the pilot.** $u = 0$ in T0, T1 and T1b. $u$ is free only in T2 (indentation), with a prescribed displacement or paired geometry.
+
+### 3.3 Garment clearance, computed, not free
+
+For an observed cloth point $q$ with correspondence $X_q$ and unit direction $\nu_q$, the current skin is $\Gamma^{S}_{\text{cur}}(X; z) = \Gamma^{S}_{\text{ref}}(X; z^{\text{ref}}) + u_s(X)$ and
+$$ c_q(z) = \nu_q^\top \big( q - \Gamma^{S}_{\text{cur}}(X_q; z) \big), \qquad \varrho_q(z) = \big( I - \nu_q \nu_q^\top \big) \big( q - \Gamma^{S}_{\text{cur}}(X_q; z) \big), $$
+the clearance and the tangential residual. Both are affine in $z$ once $X_q$ and $\nu_q$ are fixed. When the observation is a ray intersection instead of a matched point, $c_q$ is the distance along that ray and there is no tangential residual. A waistband pressing in is $u_s < 0$ with $c \approx 0$; a loose panel is $u_s = 0$ with $c > 0$.
 
 ## 4. Mechanics adopted from the report, and what is left out
 
-Adopted: the three-way split of section 3; the reduced interface and membrane energies as the regulariser for $u$; the transfer length as the physical meaning of "how far along the skin a local change is felt"; the statement that anchors follow the tissue they attach to (fascia following muscle), not the nearest bone; the warning against counting one stiffness twice (membrane and interface), and against reading stiffness from shape alone.
+Adopted: the split between how a person is built and how tissue has moved; the reduced interface and membrane energies; the transfer length; anchors that follow the tissue they attach to (fascia following muscle) rather than the nearest bone; the warnings against counting one stiffness twice and against reading stiffness from shape alone.
 
-Left out of the pilot: discrete cable networks and slack lengths, hyperelastic matrix and collagen laws, contact with friction, dynamics, viscoelasticity, damage. They need loading or motion data that we do not have; they become relevant when the figure is animated (the project's later physics stage), not for inferring a static interior.
+Left out of the static pilot and needed for animation (section 10): discrete cables, hyperelastic laws, contact with friction, inertia and damping, viscoelasticity.
 
-Consequence for the attention design: the shared skin surface already carries neighbour-to-neighbour mechanical coupling through $E_S$. Whole-person attention is for the other kind of context, how a visible region informs reference anatomy elsewhere. The report's example transfer lengths are not an attention radius.
+## 5. Clothing: what the cloth does and does not say
 
-## 5. Clothing: what the observed cloth does and does not say
+- Bare skin: equality up to surface noise. Cloth: $c \ge 0$, one-sided. Hair and props: $c \ge 0$ with no useful upper limit.
+- The step across a garment's edge is an *effective edge offset* $\tau_e$ (fabric plus hem, seam, gap or indentation), a feature of the garment.
+- For tight cloth near a closing of the body by a ball of radius $R$, the cloth's largest concave curvature satisfies $\kappa_{\max} \le 1/R$: it gives an upper bound on $R$.
+- A flat panel may lie on flat skin or span a hollow of any depth; the cloth alone does not decide it.
+- **Clearance model.** $p(c \mid \text{features})$ with features $\tau_e$, local curvature, distance to the garment's edge, material. A first family: a Gaussian truncated to $c \ge 0$, location $m$ and spread $s$ fitted separately for tight contact, loose panels and uncertain correspondence, on paired body and garment geometry. Its negative logarithm on the support, $(c - m)^2 / (2 s^2)$, is convex.
+- **Sources of paired data:** the user's characters where the body under an outfit is known; simulated garments on CT bodies; an independent cloth-simulation dataset (named in review, unverified). A retained *pre-compression* body mesh gives the clearance only where the garment does not press the skin in; it cannot say how far a waistband pushed.
+- **Both skins are predicted**: the reference skin (which the anatomy belongs to) and the current skin (which the cloth touches).
 
-### 5.1 Observation types
+## 6. Inference: prior plus one likelihood
 
-Bare skin: $c = 0$, an equality up to surface noise. Cloth: $c \ge 0$, one-sided. Hair, props: $c \ge 0$ with no useful upper limit.
+$$ \hat z = \arg\min_z \; \underbrace{-\log p_\vartheta(z^{\text{ref}} \mid g)}_{\text{learned prior}} \;+\; \underbrace{-\log p(\mathcal O \mid z)}_{\text{surface, used once}} \;+\; \underbrace{E_\Gamma(u) + E_S(u)}_{\text{mechanics}} \;+\; \text{(seams, joints)} \quad \text{s.t. hard rules}. $$
 
-### 5.2 What can be estimated from the cloth alone, stated carefully
+Context comes from the prior's covariance. The exterior is not also an input to the prior. A conditional network $p(z^{\text{ref}} \mid \mathcal O, g)$ may initialise the solver; its output is not multiplied into the objective. Construction (II), conditional predictor plus feasibility, is kept only as a comparison (T3).
 
-- **Edge offset.** The step from skin to cloth across a garment's edge is an *effective edge offset* $\tau_e$: fabric thickness plus whatever a rolled hem, seam, gap or indentation adds. It is a feature of the garment, not a measurement of fabric thickness.
-- **Bridging radius.** If tight cloth lies near a closing of the body by a ball of radius $R$, the cloth's concave curvature satisfies $\kappa_{\max} \le 1/R$. So the largest concave curvature observed on the cloth gives a **lower** bound on $1/R$, an upper bound on $R$. (Version 3 stated this the wrong way round.)
-- **Bridged or not.** A flat or ruled panel may lie on flat skin or span a hollow of any depth. The cloth alone does not decide it. Evidence comes from elsewhere: the mirror side, the garment's edges, bare skin nearby, and the population prior over $z^{\text{ref}}$.
-
-### 5.3 The clearance distribution
-
-$p(c \mid \text{cloth features})$ with features $\tau_e$, local curvature, distance to the garment's edge and material. It is **calibrated on paired body and garment geometry**, never assumed: (a) the user's own characters where the unclothed body under an outfit is known (question U1); (b) simulated garments on CT bodies; (c) an independent cloth-simulation dataset with varying tightness, fabric and body shape, so that the model is not only tested on its own simulator's assumptions (candidate named in review: CLOTH3D; unverified).
-
-### 5.4 Which skin is predicted
-
-Both, and they are different variables: the reference skin $\Gamma^{S}_{\text{ref}}$ (the unclothed, unloaded body, which is what the anatomy belongs to) and the current skin $\Gamma^{S}_{\text{ref}} + u_s$ (the body as worn, which is what the cloth touches).
-
-### 5.5 What the user's arrangement buys
-
-Cloth kept close to the body makes $c$ small and tightly distributed on convex regions, which is nearly an equality there. It does not remove bridging over hollows, compression at elastic edges, or anything about hair. If the outfit is fitted onto a known body mesh and that mesh is kept, clothing stops being inference: $c$ and the contact regions are known.
-
-## 6. Inference: the exterior is used once
-
-Two coherent constructions; version 4 chooses the first and keeps the second as the comparison.
-
-**(I) Prior plus one likelihood (chosen).** Learn the population's anatomy $p_\vartheta(z^{\text{ref}} \mid g)$ jointly over bone and soft tissue, and apply the character's surface once, in the optimiser:
-$$ \hat z = \arg\min_z \; \underbrace{-\log p_\vartheta(z^{\text{ref}} \mid g)}_{\text{learned prior}} \;+\; \underbrace{-\log p(\mathcal O \mid z)}_{\text{surface, once}} \;+\; \underbrace{E_\Gamma(u) + E_S(u)}_{\text{mechanics}} \;+\; \text{(seams, joints)} \quad \text{s.t. hard rules}. $$
-Context comes from the prior's covariance: seeing a bare forearm moves the estimate of the covered thigh because the population says they vary together. Reasons for choosing it: the surface geometry is trustworthy on any body, including a stylised one, while a network's guess is not; clothing inequalities live naturally in the likelihood; it is how our fit already works.
-
-**(II) Conditional predictor plus feasibility.** Learn $p_\vartheta(z^{\text{ref}} \mid \mathcal O, g)$ and use the optimiser only for hard rules and for genuinely new observations (an artist's correction given afterwards). The reviewer prefers this for the pilot.
-
-A conditional network is still useful under (I) as an initialiser or proposal for the solver; its output is then not multiplied into the objective.
-
-**What the transformer-diffusion model is, under (I).** A generative prior over anatomies: tokens for the person facts, for global coefficients $a$, and structure-query tokens anchored on the atlas; attention with the relations of version 3 (same segment, adjacent, mirror, same garment). Sampling from the posterior is either the convex fit with a Gaussian or Huber form of the prior, or guided sampling with the surface likelihood (posterior sampling with a diffusion prior; open, 12.4).
+**The learned model** is a generative prior over anatomies: person-fact tokens, global coefficient tokens for $a$, structure-query tokens anchored on the atlas; attention relations: same segment, adjacent, mirror, same garment. Under this construction a low-rank Gaussian over a joint skin, fascia and bone basis is the classical statistical shape model; a transformer with diffusion earns its place only if the distribution is not well described by that (T4).
 
 ## 7. The optimiser's terms
 
 ### 7.1 Prior
 
-Three kinds of direction: gauge (removed); the learned subspace, penalised by $\psi(\| \Sigma_a^{-1/2}(a - \mu_a) \|)$; the remainder, which keeps the fit's existing stiffness. The penalty $\psi$ is Huber: for a coordinate $x$ in prior standard deviations with the surface asking for $k$ at relative precision $\lambda$, a quadratic prior gives $x^\ast = \lambda k / (1 + \lambda)$ (a fixed fraction lost), a Huber prior with transition $c_H$ gives $x^\ast = k - c_H/\lambda$ beyond it (a bounded pull). $c_H$ is estimated on validation data. A result in the tail is feasible and unusual; its accuracy there is unknown.
+Gauge directions removed; the learned subspace penalised by a Huber function of the Mahalanobis norm, $\psi(\| \Sigma_a^{-1/2}(a - \mu_a) \|)$; the remainder keeps the fit's existing stiffness. For one coordinate in prior standard deviations, with the surface asking $k$ at relative precision $\lambda$: quadratic gives $x^\ast = \lambda k/(1+\lambda)$, Huber beyond its transition $c_H$ gives $x^\ast = k - c_H/\lambda$. $c_H$ is estimated on validation data.
 
-### 7.2 Surface
+### 7.2 Surface, with the garment equation closed
 
-$$ -\log p(\mathcal O \mid z) = \sum_{\text{skin}} \frac{\| q - (\Gamma^{S}_{\text{ref}} + u_s)(X_q) \|^2}{2\sigma_{\text{surf}}^2} \;+\; \sum_{\text{cloth}} \varphi\big(c(X_q)\big) \;+\; \sum_{\text{hair, prop}} \iota_{\ge 0}\big(c(X_q)\big), $$
-with $\varphi = -\log p(c \mid \text{features})$ from 5.3, required to be convex and infinite for $c < 0$.
+$$ -\log p(\mathcal O \mid z) = \sum_{q \in \text{skin}} \frac{\| q - \Gamma^{S}_{\text{cur}}(X_q; z) \|^2}{2 \sigma_{\text{surf}}^2} \;+\; \sum_{q \in \text{cloth}} \Big[ \varphi\big( c_q(z) \big) + \frac{\| \varrho_q(z) \|^2}{2 \sigma_{\tan}^2} \Big] \;+\; \sum_{q \in \text{hair, prop}} \iota_{\ge 0}\big( c_q(z) \big), $$
+with $c_q(z)$ and $\varrho_q(z)$ from 3.3 and $\varphi = -\log p(c \mid \text{features})$, infinite for $c < 0$. The skin is now pulled to where the cloth says it can be; there is no free clearance to absorb the misfit.
 
 ### 7.3 Hard rules
 
-Bone inside fascia inside reference skin ($t^{L} \ge 0$, $t^{F} \ge 0$ by construction); current skin inside or on the cloth ($c \ge 0$); seams and joints as now.
+$t^{L} \ge 0$, $t^{F} \ge 0$, $0 \le f^{A} \le 1$; $c_q(z) \ge 0$; seams and joints as now.
 
-### 7.4 Convexity
+### 7.4 What is and is not convex
 
-With correspondences $X_q$ and normals fixed, every term is convex in the variables. Reassigning correspondences or moving the surfaces the rules refer to changes the problem, so the solver is successive convex steps (as now), and feasibility is reported on the final meshes, not only in the last linearised step.
+With correspondences, normals and ray assignments fixed, the surface and mechanics terms are convex in $(a, u)$ for the deformation graph. Joint rotations, log-thickness and logit maps, and moving intersections are not; they are linearised each step. The solver is successive convex steps, and feasibility is reported on the final meshes.
 
-### 7.5 Bounds and fixed points
+## 8. Uncertainty is a separate calculation
 
-No learned bound is added on top of the prior unless it improves held-out fits; equality only for observed or artist-fixed points.
+### 8.1 The exact benchmark
 
-## 8. Symmetries and inputs
+For a local linear observation $y = H a + \varepsilon$, prior $a \sim \mathcal N(\mu, \Sigma)$, noise $\varepsilon \sim \mathcal N(0, R)$:
+$$ \Lambda_{\text{post}} = \Sigma^{-1} + H^\top R^{-1} H, \qquad \mu_{\text{post}} = \mu + \Lambda_{\text{post}}^{-1} H^\top R^{-1} (y - H\mu). $$
+Three checks with known answers:
 
-Unchanged from version 3: planes and frames from the outer surface only; mirror as one condition on the state; roll landmark kept, no Fourier-phase canonicalisation; relative plane geometry $d_{ij} = R_i^\top(o_j - o_i)/S$, $Q_{ij} = R_i^\top R_j$ in attention where planes are tokens (construction II and the amortised initialiser).
+1. A correctly learned conditional model (construction II) reproduces this update under the same assumptions.
+2. Using the exterior twice adds $H^\top R^{-1} H$ twice: the overconfidence of version 3, in one line.
+3. With $H = [\,1 \;\; 1\,]$ on $(t^{L}, t^{F})$ the data add precision only along $(1, 1)$; along $(1, -1)$ the posterior keeps the prior's precision. Total thickness is learned from the surface; the split is not.
+
+### 8.2 Beyond the benchmark
+
+With clothing inequalities, Huber tails or several modes there is no closed form. Candidates: a Laplace approximation at the minimiser (curvature of the final convex step, with active inequalities handled as one-sided); sampling the posterior (guided sampling with a diffusion prior, or a mixture of fits); each checked against **held-out empirical coverage**, which is the only test that counts.
 
 ## 9. Training
 
-### 9.1 Targets are measurements
+**Targets are measurements** (per CT person): skin surface points; bone surface points from intensity; adipose tissue from its intensity range; fascia where visible or labelled, with its uncertainty recorded; named-ray depths; regional fat area where fascia is ambiguous.
 
-Per CT person: skin surface points (threshold); bone surface points (bone is the highest-contrast tissue and is found from intensity even without per-bone labels); adipose tissue from its intensity range (a standard convention; the exact range is a cited value to be confirmed, 14); fascia where it is visible or labelled, with its uncertainty recorded where it is not; named-ray depths $d^{SB}$, $d^{SF}$, $d^{\text{fat}}$; regional fat area on a slice where the fascia is ambiguous.
+**Gaussian head.** $y_p \mid g_p \sim \mathcal N\big( y^0_p + H_p(\mu_a - a^0_p),\; H_p \Sigma_a H_p^\top + R_p \big)$. A covariance direction $\Delta$ is unlearnable when $H_p \Delta H_p^\top = 0$ for all scans.
 
-### 9.2 Gaussian head: likelihood in measurement space
+**Diffusion or flow head.** Denoising on $a$ where clean latents are credible; otherwise trained and compared through the measurement function with a proper sample score (energy score), measurement noise added, normalisation fixed on the training split, sampling cost counted.
 
-With $y_p$ the stacked measurements, $H_p$ their sensitivity to $a$ around a reference fit and $R_p$ their noise,
-$$ y_p \mid g_p \sim \mathcal N\big( y^0_p + H_p(\mu_a - a^0_p),\; H_p \Sigma_a H_p^\top + R_p \big). $$
-Identifiability of the covariance is decided by which symmetric perturbations $\Delta$ satisfy $H_p \Delta H_p^\top = 0$ for all scans: if half the scans measure only $a_1$ and half only $a_2$, both variances are learned and their correlation is not. The intersection of null spaces does not reveal this; the condition on $\Delta$ does.
+**Point predictions** use squared geometric error; never a random draw against the truth.
 
-### 9.3 Diffusion or flow head
+**Cover.** Simulated garments and hair as connected 3D regions on CT bodies, plus the calibration sources of section 5.
 
-Where clean latent targets are credible (scans with enough measurements to pin $a$), ordinary denoising on $a$. Otherwise the head is trained and compared by a proper sample score through the measurement function: draw several anatomies, map each through the scan's measurement operator, add modelled measurement noise, and score the samples against the observed measurements with the energy score, normalisation fixed on the training split. This needs a differentiable sampler and its cost is counted.
+## 10. From the fitted anatomy to an animated rig
 
-### 9.4 Point predictions
+The user asked whether, once the connection from bone to skin and the tissue physics exist, the figure is ready for animation. Yes: bones driven through a motion clip, with attachments carrying that motion to muscle, fat and skin, is a physics-based deformation rig. The conditions:
 
-Squared geometric error is for a point prediction only; never between a random draw and the truth.
+### 10.1 What is frozen and what is driven
 
-### 9.5 Cover
+| Part | During animation |
+|---|---|
+| Character anatomy: bone shapes and lengths, reference thicknesses and fat fraction, attachment locations | **Frozen** after the fit. Re-solving a femur's length against the silhouette each frame would let the anatomy drift. |
+| Articulated skeleton: joint centres, local axes, parent-child order, bind pose | Defined once. A clip supplies joint coordinates $\theta_t$; each bone's rigid transform $(R_b(\theta_t), c_b(\theta_t))$ follows. |
+| Muscle, fascia, fat, skin | **Solved**: anchors move with their bones, $a_j(t) = R_b(\theta_t) A_j + c_b(\theta_t)$ for an anchor at the fixed material point $A_j$ of bone $b$; the tissue solver finds the deformation. Optional muscle activation is an extra input. |
+| Visible mesh | A persistent binding from each render vertex to the simulated tissue (or the simulated skin is the render mesh). |
 
-Simulated garments and hair on CT bodies as connected 3D regions, giving $(\mathcal O, c)$ pairs with known skin; plus the calibration sources of 5.3.
+### 10.2 Two solves
 
-## 10. Experiments, in order: the thigh pilot
+*Quasi-static* (first milestone): for each frame,
+$$ x^\ast(\theta_t) \in \arg\min_{x \in \mathcal A} \; E_{\text{int}}\big(x;\, \text{anchors}(\theta_t)\big), $$
+with $E_{\text{int}}$ the tissue, attachment and contact energies and $\mathcal A$ the non-penetration set. *Dynamic* (when fast motion shows the need): implicit Euler as an incremental minimisation,
+$$ x^{n+1} = \arg\min_x \; \frac{\| x - \hat x \|_M^2}{2 \Delta t^2} + \frac{\| x - x^n \|_D^2}{2 \Delta t} + E_{\text{int}}(x; t_{n+1}), \qquad \hat x = x^n + \Delta t\, v^n , $$
+which adds lag and settling. Here the mechanics left out of the static pilot (section 4) come back, with parameters that need loading or motion data.
 
-Region chosen because it has a clear bone boundary, substantial soft tissue, and both tight and loose clothing in practice; the data we hold covers it (pelvis about 580 scans, legs 148; exact census running).
+### 10.3 What the current pipeline has and lacks
 
-**T0a Measurement.** On reviewed scans: skin, fascia and femur boundaries on prescribed rays, repeated under perturbed landmarks and planes. Gives $R_p$.
+Has: fitted bones with closed joints; joint centres; for every muscle vertex a share of each bone it follows (harmonic weights, dual-quaternion blending), which is already a kinematic rig for the muscles; a repaired, non-protruding rest state.
 
-**T0b Oracle fit, twice.** (i) Femur fixed at its measured boundary; can the layered state fit the skin and fascia? (ii) All free. If the skin fits only when the femur leaves its measured boundary, the state lacks soft-tissue freedom.
+Lacks: joint axes and ranges of motion; a binding of the visible skin to the tissue; muscles that do not overlap bone or each other (16% of muscle points overlap bone in the current result); attachment areas for most muscles (129 of 684 muscle items have both ends identified); any calibrated tissue parameters.
 
-**T0c Compression.** The same with the reduced basis; skin, fascia and bone errors reported separately.
+### 10.4 Milestone and finish line
 
-**T1 One body, three observations.** Each held-out body fixed; supply bare skin, tight cover, and bridged or loose cover in turn. Score reference-skin error, femur error, fascia and fat error, and interval coverage. Baseline: a model given material labels only. *The decisive reading:* does changing the clothing on a fixed body change the inferred femur, the hidden skin, or only the uncertainty?
+Milestone: the thigh pilot extended with pelvis and lower leg, driven through a slow hip and knee bend, pose by pose. Check that the femur keeps its fitted shape, attachments stay on their material points, the layers keep their order, and the visible thigh bends continuously. Then the same motion fast.
 
-**T2 Indentation.** A prescribed local indentation with known skin displacement on a known thigh. Does the model move skin and thin the fat locally while keeping the femur and the reference anatomy? With a simulated indentation this tests the implementation only; stiffness calibration stays open.
+Finish line: **fit once, bind once, play a motion clip not seen before without rerunning the anatomy inference.**
 
-**T3 Constructions.** (I) against (II) against (II) plus a surface penalty, on the same bodies. This tests directly whether using the exterior twice improves accuracy or only narrows uncertainty.
+Who drives the bones matters. For an animator or a motion-capture clip, $\theta_t$ is given and the above suffices. A character that moves by its own muscles also needs a controller, articulated dynamics, balance and ground contact; that is outside this handout.
 
-**T4 Heads.** Gaussian, mixture, diffusion over the same state: energy score, coverage, error after the fit.
+## 11. Experiments, in order
 
-**T5 Paradigms** (kept from version 3): per-slice prediction (A), shared state with slice supervision only (B), plus off-plane supervision (C), with one frozen basis.
+**T0a Measurement.** Skin, fascia and femur boundaries on prescribed rays of reviewed scans, repeated under perturbed landmarks and planes. Gives $R_p$ and the count of usable thighs.
 
-**T6 Outfits on one known body.** Two outfits fitted on the same known mesh, the mesh kept for scoring: accuracy, not only repeatability.
+**T0b Oracle fit.** Femur fixed at its measured boundary: can the layered state fit skin and fascia? Then all free. If the skin fits only when the femur leaves its boundary, the state lacks soft-tissue freedom. Check layers for crossings.
 
-**Then the face**, as a separate pilot: independent CT depth at the upper lip as the acceptance test; the conflicting atlas-depth terms removed from the skull fit; the hand-written philtrum rule removed. The thigh validates the machinery; it says nothing about facial precision, and a thigh fat model cannot say how a facial depth error divides between fat, muscle and bone position.
+**T0c Compression.** The same with the reduced basis; skin, fascia, bone errors separately.
 
-## 11. Data
+**T1 One body, changing cover** ($u = 0$). Bare skin, then tight cover, then bridged or loose cover on the same held-out body. Score reference skin, femur, fascia, interval coverage; baseline with material labels only. Expected: changing the outfit mainly changes uncertainty about hidden skin.
 
-Reported by the data session, not re-checked by me: TotalSegmentator CT (1,228 people; 38 full faces, 110 at most; chest about 580, pelvis about 580, legs 148) held privately; open head sets small (HaN-Seg 42; one further set withheld because its source moved to controlled access); MRI sets being fetched; large face collections need an institutional application. Labels: each bone except forearm, hand, shin, foot; about ten named muscles; no skin or fascia labels; fat through intensity or a separately licensed model. The face-model budget is to be based on reviewed, usable faces actually in hand.
+**T1b Reveal the fascia.** Give the exterior, then one independently measured fascia contour. Expected: the exterior fixes the total thickness; the contour narrows the muscle-fat split; an already well-localised femur does not move. A model confident about the split before seeing fascia must earn that confidence in coverage.
 
-CT bodies are supine; characters stand. This shifts soft tissue, not bone, and belongs to $u$ (12.6).
+*Build order so far: T0a, T0b (fixed femur), T0c, T1 (bare and loose), T1b. Indentation and diffusion wait until this sequence works.*
 
-## 12. Disagreements and open positions
+**T2 Indentation.** Prescribed local indentation with known skin displacement; sensitivity to $\alpha$, $r_n$, $\ell_s$ varied separately.
 
-**12.1 Construction (I) or (II).** *Reviewer:* (II) for the pilot. *Mine:* (I), for the reasons in section 6. T3 decides. Note for the user: under (I) the learned model is a population prior, and a low-rank Gaussian over a joint skin, fascia and bone basis is a classical statistical shape model. A transformer with diffusion earns its place only if the anatomy distribution is not well described by that (several modes, strong dependence on person facts). T4 measures it.
+**T3 Constructions.** (I), (II), and (II) plus a surface penalty, against the benchmark of 8.1.
 
-**12.2 How much mechanics.** *Reviewer:* add reference skin, a reduced displacement field and a separate garment model. *Agreed on structure.* *Mine:* the stiffness ratio per region is not identifiable from anything we hold, and the user's rule forbids setting it by hand. Either it is learned from paired data we do not yet have (the same body bare and compressed), or $u$ is restricted to cases where the surface itself shows deformation and $\ell_s$ carries a wide prior. To settle: what paired data would identify $\ell_s$ per region, and whether cloth-simulation data can stand in.
+**T4 Heads.** Gaussian, mixture, diffusion.
 
-**12.3 Stylisation.** A stylised character's surface differs from people systematically. How bone follows is a **policy**, not a fact: a wider thigh may be more soft tissue, a broader femur, or both. Policies (bone follows the surface warp fully, partly, or not at all) are explicit options to test on characters with known construction. Paired warps of CT test recovery of the policy that made them, not which policy is right for an independently designed character.
+**T5 Paradigms.** Per-slice (A), shared state with slice supervision (B), plus off-plane supervision (C).
 
-**12.4 Sampling the posterior.** Convex fit around a Gaussian or Huber prior, or guided diffusion sampling with the surface likelihood. The second is exact in principle and costly; whether it is needed depends on T4.
+**T6 Outfits on one known body**, the body mesh kept for scoring.
 
-**12.5 Fixed points.** The hand-written philtrum rule compensated for terms that pulled the wrong way. First remove those terms and apply a prior of the right strength; add firm rules only if still needed.
+**T7 Posture.** Supine reference to a standing character: as a known load producing $u$, or as a conditioned prior.
 
-**12.6 Supine to standing.** Treat posture as a known load producing $u$, or condition the prior on posture. No data on hand distinguishes them.
+**T8 Slow bend** (section 10.4).
 
-## 13. Decisions needed from the user
+**Then the face**, separately: independent CT depth at the upper lip as the acceptance test, conflicting atlas-depth terms and the hand-written philtrum rule removed.
 
-- **U1.** Is the unclothed body mesh under a character's outfit available, or can outfits be fitted onto a known body? If yes, clearance is known rather than inferred, and T6 becomes possible.
-- **U2.** Which skin is the deliverable where they differ: the unclothed reference (default here) or the body as worn?
-- **U3.** May faces from CT be rendered inside the private job, with nothing leaving it, so that the same keypoint detector runs on CT and on the character? Otherwise a surface-native landmark method is needed for the face pilot.
-- **U4.** Does CT of real, anonymised people fit the consent rule that excluded a model built from one person's photo?
+## 12. Data
 
-## 14. Not verified
+Reported by the data session, not re-checked by me: one whole-body CT set of 1,228 people held privately (chest about 580, pelvis about 580, legs 148; 38 full faces, 110 at most); a 42-person head set and two MRI sets being fetched; a further head set withheld because its source moved to controlled access; large face collections need an institutional application. Labels: each bone except forearm, hand, shin and foot; about ten named muscles; **no skin or fascia labels**; fat from intensity or a separately licensed model.
 
-The reference world model's architecture; every work cited by the reviewer (surface-to-CT torso generation; head-to-skull regression errors; relative-transform attention; segmentation-conditioned CT generation; a medical volume diffusion model; signed-distance shape representations; the cloth-simulation dataset; thigh CT studies using fascia to separate subcutaneous from intermuscular fat; the thigh-compression and gluteal-fat mechanics studies); the references of the skin-attachment report (I read the report, not its sources); the data census; the intensity range used to find fat in CT; that keypoints and minimal-area planes work on clinical CT; that garment edges on generated characters are clean enough to measure an edge offset.
+**The number that decides the pilot** is how many people have the same usable thigh segment with reviewable femur, skin and enough fascia to score the split. It is not known. T0a produces it.
+
+## 13. Open positions
+
+**13.1 How much mechanics.** $\alpha$, $r_n$ and $\ell_s$ are unidentifiable from what we hold and may not be set by hand. To settle: which paired data identify them per region, and whether cloth-simulation or published tissue tests can provide priors in proportions.
+
+**13.2 Stylisation.** How bone follows a stylised surface is a policy (fully, partly, not at all), to be tested on characters with known construction; paired warps test recovery of the policy that made them, not which is right.
+
+**13.3 Gaussian or diffusion; convex fit or posterior sampling.** Decided by T4 and by coverage (8.2).
+
+**13.4 Fixed points.** Remove the terms that pulled the wrong way in the skull fit before adding any firm rule.
+
+**13.5 Fat readout.** Whether the adipose fraction is supportable from the scans, or the pilot reports subcutaneous-layer thickness only.
+
+**13.6 Attachments for animation.** Most muscles lack identified attachment areas; whether they can be completed from the atlas's geometry or need another source.
+
+## 14. Decisions
+
+Answered (as I read the user's reply "Acceptable to me" to the two yes-or-no questions): anonymised research CT may be used, kept in private storage; CT faces may be rendered inside private jobs, with nothing leaving them.
+
+Open:
+- **U1.** Is the unclothed body mesh under a character's outfit available, or can outfits be fitted onto a known body?
+- **U2.** Which skin is the deliverable where they differ: the reference (default) or the body as worn?
+- **U5.** For animation, will motion come from clips (given joint coordinates) or must the character also move by its own muscles?
+
+## 15. Not verified
+
+The reference world model's architecture; every work cited by the reviewer (including the physics-based character work cited for section 10 and the thigh fascia studies); the references of the skin-attachment report (the report was read, not its sources); the data census; the intensity range for fat in CT; that keypoints and minimal-area planes work on clinical CT; that garment edges on generated characters are clean enough to measure an edge offset.
 
 **Constraints on any proposal:** no hand-set decision numbers; proportions, not millimetres; a pilot within a few dollars; CT of real people stays private.
 
-## 15. Research questions for the next round
+## 16. Research questions for the next round
 
-1. **The layered state.** Is the normal-offset parametrisation of fascia and skin (3.1) adequate where the limb is not star-shaped about its bone (inner thigh, armpit, trunk)? Propose the alternative if not.
-2. **Identifiability of fat against muscle from the exterior**, given bone: which measurements or person facts reduce it, and what the posterior should look like.
-3. **The clearance model** $p(c \mid \text{features})$: a family that is convex in $c$ after the negative logarithm, supports $c \ge 0$, and is calibrated on paired data; the corrected estimator of $R$ from curvature and its bias.
-4. **Skin under a bridged panel:** with the corrected claims of 5.2, how wide is the posterior of the hollow's depth given the edges, the mirror side and the prior?
-5. **Mechanics as a prior for $u$:** with only $\ell_s$ identifiable in principle, what prior over $\ell_s$ follows from the cited tissue studies, expressed in proportions, and how sensitive are T1 and T2 to it?
-6. **Constructions (I) and (II):** show formally when they coincide, and quantify the overconfidence of using both.
-7. **Training the diffusion head by a sample score:** consistency, variance, and cost for a few dozen coefficients and a few hundred people.
-8. **Covariance identifiability:** apply the $H_p \Delta H_p^\top = 0$ criterion to the scan types we hold and list what cannot be learned.
-9. **Stylisation policies:** a parametrised family between "bone follows the surface" and "bone stays human", and a way to infer the policy from characters with known construction.
-10. **Volume preservation of fat on a fixed slice:** what a slice can and cannot say about a 3D redistribution.
-11. **Verification** of section 14 from primary sources.
+1. **Layer parametrisation:** where normal-offset lines cross (inner thigh, armpit, trunk), and the minimal alternative.
+2. **The clearance family:** beyond the truncated Gaussian, a family that stays convex and handles uncertain correspondence; the estimator of $R$ from curvature and its bias.
+3. **Posterior under inequalities:** a calibrated approximation for 8.2, with its expected failure cases.
+4. **The muscle-fat split:** which measurements or person facts reduce the $(1,-1)$ uncertainty, and how T1b should be scored.
+5. **Mechanics priors:** what published tissue tests support for $\alpha$, $r_n$, $\ell_s$ per region, in proportions; the co-rotated membrane term.
+6. **Constructions (I) and (II):** formal equivalence conditions, using 8.1 as the base case.
+7. **Training the diffusion head by a sample score:** consistency, variance, cost at our scale.
+8. **Covariance identifiability** for the scan types we hold.
+9. **From fit to rig:** joint axes and ranges from fitted bone geometry (articular surfaces), completion of muscle attachments, and the minimal tissue model that passes T8.
+10. **Stylisation policies:** a parametrised family and how to infer the policy.
+11. **Verification** of section 15 from primary sources.
 
-## 16. What to send back
+## 17. What to send back
 
-The clearance family and corrected estimators (3, 4); the layered-state parametrisation (1) and the fat-muscle posterior (2); the formal comparison of the two constructions (6); the diffusion training objective (7); the list of unlearnable covariances (8); a position on each item of section 12; verified accounts of the cited works.
+The clearance family and posterior approximation (2, 3); the layer parametrisation (1); the scoring of T1b (4); mechanics priors (5); the formal comparison of constructions (6); the diffusion objective (7); the rig requirements (9); a position on each item of section 13; verified accounts of the cited works.
