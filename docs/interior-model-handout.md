@@ -229,6 +229,27 @@ A fascia contour fixes where the two layers meet; it says nothing directly about
 
 **Then the face**, separately: independent CT depth at the upper lip as the acceptance test, conflicting atlas-depth terms and the hand-written philtrum rule removed.
 
+## 11b. Results so far: T0a (measurement), 2026-11-22
+
+Measured on the private CT set; numbers only, no images. Lengths in millimetres at the scanned person's own size.
+
+**Thigh.** Only 29 whole femurs from 17 adults exist in the set. Scored slice by slice (a slice counts when its section is clean), 201 of 348 slices are usable. Median across thighs: skin to bone 48.5 (middle half 44.3 to 60.6), skin to fascia 10.5, fat 8.2, dermis 1.5. Repeatability (20 re-extractions with the femur label moved by one voxel): 0.1 to 0.35 for skin, fascia and fat, 1.3 for bone (the label's own resolution). The fascia stand-in is clear on 76% of rays. Too few people for a population model; the thigh is a method check.
+
+**Pelvis (chosen pilot region).** 408 adults with a whole pelvis; nine landmark slices each (iliac crests, top of sacrum, top of femoral heads, bottom of sacrum, ischial tuberosities, and midpoints); 3,274 of 3,672 slices usable (the rest hold metal implants or arms). Rays: 264,240; 0.2% dropped for an arm against the side, 8.5% for reaching the image edge.
+
+| Quantity (median across people) | Front | Side | Back |
+|---|---|---|---|
+| Dermis | 1.1 to 1.9 | 1.5 to 2.2 | 3.0 to 3.8 |
+| Subcutaneous fat | 18.8 to 28.9 | 16.7 to 19.9 | 14.2 to 21.2 |
+| Skin to fascia | 20.2 to 33.0 | 18.8 to 23.4 | 18.4 to 25.1 |
+| Fascia stand-in clear | 87 to 92% | 88 to 92% | 81 to 86% |
+| Repeat spread, soft layers | 0.3 to 1.3 | 0.3 to 0.6 | 0.0 to 1.0 |
+| Repeat spread, bone | 1.3 to 2.5 | 1.3 to 1.6 | 1.2 to 2.0 |
+
+Checks: (a) at the back, where the gluteal and back muscles are labelled, the fascia stand-in lies 1 to 4 mm outside the labelled muscle, an independent confirmation; at the front and side the first labelled muscle is deep (the abdominal wall muscles are not labelled), so that check does not apply there. (b) Subcutaneous fat at the femoral-head level is thicker in women (median 21.8, middle half 16.5 to 30.9; 171 people) than in men (15.0, 11.2 to 20.2; 236 people), as expected. (c) Dermis reads thicker at the back; back skin is thicker, but these people lie on their backs, so compression on the table may contribute (open: 12.6). (d) The pelvic tilt summary failed for some people (a missing value; to fix).
+
+What this establishes: the soft layers of the pelvis can be measured on hundreds of people with sub-millimetre repeatability; the fascia boundary needed by T1b is visible on most rays; measurement noise $R_p$ per quantity is now known. Next is T0b: fitting the layered atlas into these scans.
+
 ## 12. Data
 
 Reported by the data session, not re-checked by me: one whole-body CT set of 1,228 people held privately (chest about 580, pelvis about 580, legs 148; 38 full faces, 110 at most); a 42-person head set and two MRI sets being fetched; a further head set withheld because its source moved to controlled access; large face collections need an institutional application. Labels: each bone except forearm, hand, shin and foot; about ten named muscles; **no skin or fascia labels**; fat from intensity or a separately licensed model.
