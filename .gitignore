@@ -1,0 +1,23 @@
+# data and outputs stay outside the repo (copyrighted pictures, large meshes)
+*.glb
+*.gltf
+*.vrm
+*.fbx
+*.ply
+*.npz
+*.npy
+*.png
+*.jpg
+*.pt
+*.safetensors
+__pycache__/
+renders/
+cards/
+*.log
+.env
+
+# scratch files at the repo root
+/_*.py
+/repro_seg.py
+/__tracked_surface.stl
+*.stl

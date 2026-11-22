@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>model-to-vrm: bones and muscles inside a generated 3D figure</title>
+<meta name="description" content="A pipeline that fits a full skeleton and muscles inside an AI-generated 3D character, using detectors, a decision model, CT statistics and convex optimisation.">
+<style>
+:root { --bg: #eef1f3; --panel: #ffffff; --fg: #1c2529; --muted: #5d6b72; --line: #cfd8dc; --accent: #0f6e78; --accent-fg: #ffffff; --warn: #8a5a12; --warn-bg: #fbf3e2;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --bg: #12181b; --panel: #1b2327; --fg: #e6edf0; --muted: #9aa9b0; --line: #33414a; --accent: #4fc3cf; --accent-fg: #06282c; --warn: #e6c27a; --warn-bg: #2a2416; color-scheme: dark } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 16px; line-height: 1.55; }
+main { max-width: 860px; margin: 0 auto; padding: 28px max(16px, env(safe-area-inset-right, 0px)) 56px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 28px; }
+h1 { font-size: clamp(1.6rem, 4.5vw, 2.3rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.2rem; margin: 0 0 10px; }
+p { margin: 0 0 10px; max-width: 68ch; }
+.lead { font-size: 1.08rem; color: var(--muted); }
+video { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #12181b; display: block; }
+.btn { display: inline-block; background: var(--accent); color: var(--accent-fg); text-decoration: none; font-weight: 600; padding: 11px 18px; border-radius: 999px; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; min-width: 0; }
+ol, ul { margin: 0; padding-left: 1.25em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+.warn { background: var(--warn-bg); border-color: var(--warn); }
+.warn h2 { color: var(--warn); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+a { color: var(--accent); }
+footer { color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Bones and muscles inside a generated 3D figure</h1>
+    <p class="lead">One textured 3D model of a character goes in. A full skeleton, about 680 muscle and tendon pieces, and the nose's cartilages come out, fitted inside her own surface.</p>
+  </header>
+
+  <video src="demo.mp4" controls muted loop playsinline preload="metadata" poster="demo_poster.jpg"></video>
+
+  <div class="row">
+    <a class="btn" href="viewer.html">Open the interactive 3D viewer</a>
+    <a class="btn ghost" href="https://github.com/gardianofthedarkness/model-to-vrm">Code on GitHub</a>
+  </div>
+
+  <section>
+    <h2>What you are looking at</h2>
+    <p>The figure is a fictional elf, generated as a single textured mesh about 98 cm tall. Nothing inside it was modelled by hand. The viewer lets you turn it, fade the body, switch muscles and bones on and off, and cut it open.</p>
+    <p>The video above is a recording of that viewer being turned, not a separate render.</p>
+  </section>
+
+  <section>
+    <h2>How it is made</h2>
+    <ol>
+      <li><strong>Read the model.</strong> Eight rendered views, per-point colours and normals.</li>
+      <li><strong>Find joints and landmarks.</strong> A whole-body keypoint detector on the renders, triangulated to 3D; close-ups for hands, feet and the face.</li>
+      <li><strong>Tell skin from cloth and hair.</strong> SAM 3 masks voted onto the surface; a vision language model labels each piece.</li>
+      <li><strong>Mark what hangs loose.</strong> A decision model (Jev) boxes loose clothing and the philtrum on the renders. Hidden parts of her back are stood in for by her own mirror image.</li>
+      <li><strong>Place an anatomy atlas.</strong> The Z-Anatomy atlas is placed by named points, then each bone is fitted with joints held together and bones kept inside the body.</li>
+      <li><strong>Fit the skull.</strong> A convex problem bends the skull under her face using tissue depths measured on 388 CT scans, with the nose's cartilages in the fit.</li>
+      <li><strong>Carry the muscles.</strong> Muscles follow the bones they lie on, are brought inside her body, set to the right depth under the skin, and repaired where anything pokes out.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Checks on this result</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Check</th><th>Value</th></tr>
+      <tr><td>Joints between bones closed to</td><td>0.01 mm median</td></tr>
+      <tr><td>Left and right leg bones</td><td>identical sizes; centres mirror each other to 1&ndash;3 mm</td></tr>
+      <tr><td>Pelvis against the crotch landmark</td><td>2 mm</td></tr>
+      <tr><td>Bone under the philtrum area</td><td>6.0&ndash;7.8 mm (CT median 6.8 &plusmn; 1.0 at her size)</td></tr>
+      <tr><td>Muscle points more than one grid cell (2.7 mm) outside the body</td><td>0.02%</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="warn">
+    <h2>What is still wrong</h2>
+    <ul>
+      <li>Two small throat muscles are badly misplaced, and about 16% of muscle points overlap bone.</li>
+      <li>The back near the shoulder blades is crumpled, and the forearms under the arm warmers are 2&ndash;4 mm too thick.</li>
+      <li>The upper jaw is stretched about 17% under the philtrum, more than any real skull, so that the bone follows her stylised face.</li>
+      <li>The pipeline still contains numbers set by hand. They are listed, with what should replace each, in <a href="hardcoded-numbers.md">the open list</a>.</li>
+      <li>Only this one figure has been run end to end.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Sources and licences</h2>
+    <ul>
+      <li><strong>Anatomy atlas:</strong> Z-Anatomy (from BodyParts3D), CC BY-SA 4.0. The bone and muscle shapes in the viewer are derived from it and are shared under the same licence.</li>
+      <li><strong>Tissue depths:</strong> CT measurements of 388 adults (Simmons-Ehrhardt, Monson and colleagues), CC BY 4.0.</li>
+      <li><strong>Models used:</strong> SAM 3 for masks, RTMW for keypoints, a vision language model for labels, and the Jev decision model for boxes.</li>
+      <li><strong>The figure:</strong> a fictional character generated for this project; no real person is depicted.</li>
+    </ul>
+  </section>
+
+  <footer>Built with Claude Code. Code and this page: <a href="https://github.com/gardianofthedarkness/model-to-vrm">github.com/gardianofthedarkness/model-to-vrm</a>.</footer>
+</main>
+</body>
+</html>

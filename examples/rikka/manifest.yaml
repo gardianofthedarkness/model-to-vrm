@@ -1,0 +1,20 @@
+# One character = one manifest. Models are the same person in the same clothes.
+character: rikka
+reference_drawing: E:/figures/rikka/tripo/transfer/pi_ws/setting_reference.jpg       # the truth for colours and parts (kept out of the repo)
+models:
+  - name: original
+    file: E:/figures/rikka/tripo/tripo_parts_orig.glb
+    pose: setting pose (as drawn)
+    has: [texture, parts]
+    trust: proportions, head and face shape
+    off:
+      - texture blurry everywhere; eyes, mouth and brows smeared into the skin
+      - Tripo pieces mix things: face skin with hair, collar with nape hair, cuffs with their stripes
+  - name: twin
+    file: E:/figures/rikka/tripo/tripo_tpose.glb
+    pose: T-pose
+    has: [texture, parts]
+    trust: structure (limbs, hands, garment layers)
+    off:
+      - texture blurrier than the original's
+      - proportions drift a little from the drawing

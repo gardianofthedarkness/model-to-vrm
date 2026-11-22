@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Model to VRM</title>
+<style>
+:root{--bg:#f4f3f1;--card:#fff;--ink:#1f1d1b;--mut:#6d675f;--rule:#e2ddd5;--acc:#3f63c6;--ok:#2f8a4f;--bad:#c2412d;--run:#c98a12;--chip:#efece7}
+@media (prefers-color-scheme:dark){:root{--bg:#161514;--card:#201e1c;--ink:#eee9e2;--mut:#a39a90;--rule:#38332e;--acc:#7f9ef0;--ok:#5bbd7c;--bad:#ec7a63;--run:#e3b04b;--chip:#2b2825;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:14px max(14px,env(safe-area-inset-left)) 60px max(14px,env(safe-area-inset-right));display:flex;flex-direction:column;gap:14px}
+h1{font-size:20px;margin:0}.mut{color:var(--mut);font-size:13px}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--rule);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,input[type=text]{font:inherit;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);min-width:0}
+button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--card);color:var(--ink);cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button.warn{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.45;cursor:default}
+.box{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.step{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.step.cur{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.head b{font-family:ui-monospace,Consolas,monospace;font-size:14px}
+.chip{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);color:var(--mut)}
+.chip.done{color:var(--ok)}.chip.failed{color:var(--bad)}.chip.running{color:var(--run)}
+.sp{flex:1}
+.pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px}
+.pics a{display:block;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:#fff}.pics img{width:100%;display:block;aspect-ratio:1/1;object-fit:contain}
+.pics.wide{grid-template-columns:1fr}.pics.wide img{aspect-ratio:auto}
+details summary{cursor:pointer;color:var(--mut);font-size:13px}pre{margin:6px 0 0;padding:8px;background:var(--chip);border-radius:8px;overflow:auto;max-height:260px;font-size:12px;white-space:pre-wrap;word-break:break-word}
+#msg{min-height:1.2em}
+.tabs{display:flex;gap:6px}.tabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+#graph{height:70vh;min-height:420px;background:#2a2a2d;border-radius:12px;overflow:hidden;touch-action:none;position:relative}
+#graph svg{width:100%;height:100%;display:block;cursor:grab;user-select:none}
+#graph .hint{position:absolute;left:10px;bottom:8px;color:#9a9aa3;font-size:12px;pointer-events:none}
+.gn rect.body{fill:#3b3b40;stroke:#18181a;stroke-width:1.5}.gn.sel rect.body{stroke:#f2f2f2;stroke-width:2}
+.gn text{font:12px system-ui,sans-serif;fill:#dcdce0}.gn text.t{font-weight:600;fill:#fff}.gn text.f{font-size:11px;fill:#b9b9c1}
+.wire{fill:none;stroke:#8f8f97;stroke-width:1.6;opacity:.75}.wire.miss{stroke-dasharray:4 4;opacity:.45}.wire.hi{stroke:#ffd166;opacity:1;stroke-width:2.4}
+#node{display:none}
+.gn.running rect.body{stroke:#ffd166;stroke-width:3;animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{stroke-opacity:1;filter:drop-shadow(0 0 2px #ffd166)}50%{stroke-opacity:.35;filter:drop-shadow(0 0 10px #ffd166)}}
+.wire.flow{stroke:#ffd166;opacity:1;stroke-width:2.4;stroke-dasharray:7 7;animation:flow .7s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-14}}
+.gn.running circle.dot{animation:blink .8s steps(2) infinite}@keyframes blink{50%{opacity:.2}}
+@media (prefers-reduced-motion:reduce){.gn.running rect.body,.wire.flow,.gn.running circle.dot{animation:none}}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;max-height:78vh;overflow:auto;background:var(--card);border-top:1px solid var(--rule);
+  border-radius:16px 16px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.35);padding:12px max(14px,env(safe-area-inset-left)) calc(16px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-right));
+  transform:translateY(105%);transition:transform .22s ease;display:flex;flex-direction:column;gap:10px}
+#sheet.open{transform:none}
+#sheet .grab{width:42px;height:4px;border-radius:2px;background:var(--rule);align-self:center}
+.io{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font:12px ui-monospace,Consolas,monospace}.io div{min-width:0;overflow-wrap:anywhere}
+.io .h{font:600 12px system-ui,sans-serif;color:var(--mut)}.have{color:var(--ok)}.miss{color:var(--bad)}
+</style></head><body>
+<div class="wrap">
+  <div class="bar">
+    <h1>Model to VRM</h1><span class="sp"></span>
+    <span id="job" class="mut">idle</span><button id="stop" class="warn" hidden>Stop</button>
+  </div>
+  <div class="box">
+    <div class="row"><select id="run" aria-label="Model"></select>
+      <button id="next" class="pri">Run next step</button><button id="all">Run all remaining</button></div>
+    <div id="msg" class="mut"></div>
+    <details><summary>Add a model (.glb)</summary>
+      <div class="row" style="margin-top:8px"><input id="nm" type="text" placeholder="short name, e.g. alice" maxlength="40">
+        <input id="file" type="file" accept=".glb,model/gltf-binary"><button id="up">Upload</button></div>
+      <div class="mut">The model is copied to this computer; runs take about 1–2 hours (SAM 3 and the LLM steps are the slow ones).</div>
+    </details>
+  </div>
+  <div class="tabs"><button id="tSteps" class="on">Steps</button><button id="tGraph">Graph</button></div>
+  <div id="gwrap" hidden>
+    <div id="graph"><svg id="gsvg"></svg><div class="hint">drag to move · pinch or wheel to zoom · tap a node</div>
+      <button id="gfit" style="position:absolute;right:8px;top:8px;padding:4px 10px;font-size:13px">Fit</button></div>
+    <div id="node" class="step" style="margin-top:10px"></div>
+  </div>
+  <div id="swrap">
+  <div class="mut" style="margin-bottom:10px">Each step shows its pictures. Check them before going on; <b>Redo</b> runs a step again, <b>From here</b> redoes it and everything after it.</div>
+  <div id="steps" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+  <div id="sheet" aria-live="polite"></div>
+</div>
+<script>
+const $=s=>document.querySelector(s); let RUN=null, ST=[], JOB={}, timer=null;
+async function api(p,opt){const r=await fetch(p,opt);return r.json()}
+function say(t){$('#msg').textContent=t||''}
+async function loadRuns(){const d=await api('/api/runs');const s=$('#run');const keep=s.value||localStorage.getItem('mtvrun');s.innerHTML='';
+  for(const k of Object.keys(d.runs)){const o=document.createElement('option');o.value=k;o.textContent=k;s.appendChild(o)}
+  if(keep&&d.runs[keep])s.value=keep;RUN=s.value;showJob(d.job)}
+function showJob(j){JOB=j||{};const t=$('#job');if(j&&j.running){t.textContent=`running: ${j.what} on ${j.run} · ${Math.floor(j.seconds/60)}m${j.seconds%60}s`;$('#stop').hidden=false}
+  else{t.textContent=j&&j.what?`last: ${j.what} on ${j.run} → ${j.rc===0?'ok':'exit '+j.rc}`:'idle';$('#stop').hidden=true}
+  $('#next').disabled=$('#all').disabled=!!(j&&j.running)}
+function runningStep(){if(!(JOB&&JOB.running&&JOB.run===RUN))return '';return JOB.step||JOB.what.replace(/^(redo |from )/,'').split(' ')[0]}
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+function render(){const box=$('#steps');box.innerHTML='';const next=ST.find(s=>!s.done);
+  for(const s of ST){const running=runningStep()===s.name;
+    const c=el('div','step'+(next&&next.name===s.name?' cur':''));const h=el('div','head');h.appendChild(el('b',null,s.name));
+    const st=running?'running':s.failed?'failed':s.done?'done':'to do';h.appendChild(el('span','chip '+st.replace(' ',''),st));h.appendChild(el('span','sp'));
+    const b1=el('button',null,s.done?'Redo':'Run');b1.onclick=()=>go(s.done?'redo':'step',s.name);const b2=el('button',null,'From here');b2.onclick=()=>go('from',s.name);
+    b1.disabled=b2.disabled=!!JOB.running;h.append(b1,b2);c.appendChild(h);
+    if(s.pics.length){const g=el('div','pics'+(s.pics.length===1?' wide':''));for(const p of s.pics){const a=el('a');a.href=`/file?run=${encodeURIComponent(RUN)}&path=${encodeURIComponent(p)}`;a.target='_blank';
+      const i=el('img');i.loading='lazy';i.alt=p;i.src=`/thumb?run=${encodeURIComponent(RUN)}&path=${encodeURIComponent(p)}&t=`+(s.done?'d':Date.now());a.appendChild(i);g.appendChild(a)}c.appendChild(g)}
+    if(s.text){const d=el('details');d.appendChild(el('summary',null,'result'));d.appendChild(el('pre',null,s.text));c.appendChild(d)}
+    if(s.log){const d=el('details');if(s.failed)d.open=true;d.appendChild(el('summary',null,'log'));d.appendChild(el('pre',null,s.log));c.appendChild(d)}
+    box.appendChild(c)}}
+async function refresh(){if(!RUN)return;const d=await api('/api/status?run='+encodeURIComponent(RUN));ST=d.steps;showJob(d.job);render();
+  clearTimeout(timer);timer=setTimeout(refresh,d.job&&d.job.running?4000:20000)}
+async function go(mode,step){if(!step&&mode!=='all')return;const d=await api(`/api/run?run=${encodeURIComponent(RUN)}&mode=${mode}${step?'&step='+encodeURIComponent(step):''}`,{method:'POST'});say(d.msg||d.error);setTimeout(refresh,800)}
+$('#run').onchange=()=>{RUN=$('#run').value;try{localStorage.setItem('mtvrun',RUN)}catch(e){}refresh()};
+$('#next').onclick=()=>{const n=ST.find(s=>!s.done);if(n)go('step',n.name);else say('every step is done')};
+$('#all').onclick=()=>go('all');
+$('#stop').onclick=async()=>{const d=await api('/api/stop',{method:'POST'});say(d.msg);setTimeout(refresh,800)};
+$('#up').onclick=()=>{const f=$('#file').files[0],n=$('#nm').value.trim();if(!f||!n){say('pick a .glb and give it a name');return}
+  const x=new XMLHttpRequest();x.open('POST','/api/upload?name='+encodeURIComponent(n));x.upload.onprogress=e=>say(`uploading ${Math.round(100*e.loaded/e.total)}%`);
+  x.onload=async()=>{const d=JSON.parse(x.responseText);if(d.ok){say('uploaded as '+d.ok);await loadRuns();$('#run').value=d.ok;RUN=d.ok;refresh()}else say(d.error)};x.onerror=()=>say('upload failed');x.send(f)};
+/* ---------- node graph ---------- */
+const NS='http://www.w3.org/2000/svg';let G=[],SEL=null,VB={x:-40,y:-40,w:1600,h:1000};
+const TOOLC={blender:'#e87d0d',python:'#3d6fb6',llm:'#8a52c8',input:'#4b8b4b'};
+function sv(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+const short=f=>f.split('/').pop().replace(/\.(npz|json|png)$/,'');
+async function loadGraph(){if(!RUN)return;const d=await api('/api/graph?run='+encodeURIComponent(RUN));G=d.graph;showJob(d.job);drawGraph()}
+function drawGraph(){const svg=$('#gsvg');svg.innerHTML='';const stat={};for(const s of ST)stat[s.name]=s;
+  const nodes=[{name:'model.glb',reads:[],writes:['model.glb'],tool:'input',have:{'model.glb':true}}].concat(G);
+  const prod={};nodes.forEach(n=>n.writes.forEach(w=>prod[w]=n.name));const lvl={};
+  for(const n of nodes){lvl[n.name]=n.reads.length?1+Math.max(...n.reads.map(r=>lvl[prod[r]]??0)):0}
+  const cols={};nodes.forEach(n=>(cols[lvl[n.name]]=cols[lvl[n.name]]||[]).push(n));
+  const W=200,GX=110,RH=17,HD=26,pos={};
+  for(const c in cols){let y=0;for(const n of cols[c]){const h=HD+Math.max(n.reads.length,n.writes.length,1)*RH+10;pos[n.name]={x:c*(W+GX),y,h};y+=h+26}}
+  const sock=(n,f,side)=>{const p=pos[n],i=(side==='in'?nodes.find(m=>m.name===n).reads:nodes.find(m=>m.name===n).writes).indexOf(f);return{x:p.x+(side==='in'?0:W),y:p.y+HD+8+i*RH}};
+  const gw=sv('g',{},svg),gn=sv('g',{},svg);
+  for(const n of nodes)for(const r of n.reads){const a=sock(prod[r],r,'out'),b=sock(n.name,r,'in'),dx=Math.max(40,(b.x-a.x)/2);
+    sv('path',{d:`M${a.x},${a.y} C${a.x+dx},${a.y} ${b.x-dx},${b.y} ${b.x},${b.y}`,class:'wire'+(n.have&&!n.have[r]?' miss':'')+(n.name===runningStep()?' flow':'')+(SEL&&(SEL===n.name||SEL===prod[r])?' hi':'')},gw)}
+  for(const n of nodes){const p=pos[n.name],s=stat[n.name],g=sv('g',{class:'gn'+(SEL===n.name?' sel':'')+(n.name===runningStep()?' running':''),transform:`translate(${p.x},${p.y})`},gn);
+    const st=n.tool==='input'?'done':n.name===runningStep()?'running':s?(s.failed?'failed':s.done?'done':'todo'):'todo';
+    sv('rect',{class:'body',width:W,height:p.h,rx:7},g);sv('path',{d:`M0,7 a7,7 0 0 1 7,-7 h${W-14} a7,7 0 0 1 7,7 v${HD-7} h-${W} z`,fill:TOOLC[n.tool]},g);
+    const dot={done:'#5bbd7c',todo:'#8e8e96',failed:'#ec7a63',running:'#ffd166'}[st];sv('circle',{cx:W-13,cy:13,r:5,fill:dot,class:'dot'},g);
+    const t=sv('text',{x:9,y:17,class:'t'},g);t.textContent=n.name+(n.tool==='input'?'':'  · '+n.tool);
+    n.reads.forEach((r,i)=>{const y=HD+8+i*RH;sv('circle',{cx:0,cy:y,r:4.5,fill:n.have&&n.have[r]?'#c7c7cf':'#5a5a61',stroke:'#18181a'},g);const tx=sv('text',{x:9,y:y+4,class:'f'},g);tx.textContent=short(r)});
+    n.writes.forEach((w,i)=>{const y=HD+8+i*RH;sv('circle',{cx:W,cy:y,r:4.5,fill:n.have&&n.have[w]?'#ffd166':'#5a5a61',stroke:'#18181a'},g);const tx=sv('text',{x:W-9,y:y+4,class:'f','text-anchor':'end'},g);tx.textContent=short(w)});
+    g.addEventListener('click',e=>{e.stopPropagation();if(moved)return;SEL=n.name;drawGraph();if(n.tool!=='input')openSheet(n.name)})}
+  setVB()}
+function setVB(){$('#gsvg').setAttribute('viewBox',`${VB.x} ${VB.y} ${VB.w} ${VB.h}`)}
+let SHEET=null;
+function openSheet(name){SHEET=name;renderSheet();$('#sheet').classList.add('open')}
+function closeSheet(){SHEET=null;$('#sheet').classList.remove('open')}
+function renderSheet(){const b=$('#sheet'),name=SHEET,s=ST.find(x=>x.name===name),n=G.find(x=>x.name===name);if(!s||!n){closeSheet();return}
+  const keepLog=b.querySelector('pre.log');const scroll=keepLog?keepLog.scrollTop:null;b.innerHTML='';b.appendChild(el('div','grab'));
+  const h=el('div','head');h.appendChild(el('b',null,name));const run=runningStep()===name;const st=run?'running':s.failed?'failed':s.done?'done':'to do';
+  h.appendChild(el('span','chip '+st.replace(' ',''),st));h.appendChild(el('span','mut',n.tool));h.appendChild(el('span','sp'));
+  const x=el('button',null,'Close');x.onclick=()=>{SEL=null;drawGraph();closeSheet()};h.appendChild(x);b.appendChild(h);
+  if(run)b.appendChild(el('div','mut',`working… ${Math.floor(JOB.seconds/60)}m${JOB.seconds%60}s since the job started (${JOB.what})`));
+  const io=el('div','io');io.appendChild(el('div','h','reads'));io.appendChild(el('div','h','writes'));
+  for(let i=0;i<Math.max(n.reads.length,n.writes.length);i++){const r=n.reads[i],w=n.writes[i];
+    io.appendChild(el('div',r?(n.have[r]?'have':'miss'):'',r?(n.have[r]?'✓ ':'✗ ')+r:''));io.appendChild(el('div',w?(n.have[w]?'have':'miss'):'',w?(n.have[w]?'✓ ':'✗ ')+w:''))}
+  b.appendChild(io);
+  const row=el('div','row');const b1=el('button','pri',s.done?'Redo':'Run');b1.onclick=()=>go(s.done?'redo':'step',name);const b2=el('button',null,'From here');b2.onclick=()=>go('from',name);
+  b1.disabled=b2.disabled=!!JOB.running;row.append(b1,b2);b.appendChild(row);
+  if(s.pics.length){const g=el('div','pics'+(s.pics.length===1?' wide':''));for(const p of s.pics){const a=el('a');a.href=`/file?run=${encodeURIComponent(RUN)}&path=${encodeURIComponent(p)}`;a.target='_blank';
+    const i=el('img');i.loading='lazy';i.alt=p;i.src=`/thumb?run=${encodeURIComponent(RUN)}&path=${encodeURIComponent(p)}&t=`+(s.done?'d':Date.now());a.appendChild(i);g.appendChild(a)}b.appendChild(g)}
+  else b.appendChild(el('div','mut','no pictures for this step'));
+  if(s.text){const d=el('details');d.open=true;d.appendChild(el('summary',null,'result'));d.appendChild(el('pre',null,s.text));b.appendChild(d)}
+  if(s.log){const d=el('details');d.open=run||s.failed;d.appendChild(el('summary',null,'log'));const pr=el('pre','log',s.log);d.appendChild(pr);b.appendChild(d);if(run)pr.scrollTop=pr.scrollHeight;else if(scroll!=null)pr.scrollTop=scroll}}
+let ptrs=new Map(),moved=false,start=null;
+const gs=$('#gsvg');
+function toSvg(cx,cy){const r=gs.getBoundingClientRect();return{x:VB.x+(cx-r.left)/r.width*VB.w,y:VB.y+(cy-r.top)/r.height*VB.h}}
+gs.addEventListener('pointerdown',e=>{gs.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=false;start={vb:{...VB},pts:new Map(ptrs)}});
+gs.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});const r=gs.getBoundingClientRect();
+  if(ptrs.size===1&&start.pts.size===1){const p0=[...start.pts.values()][0],dx=e.clientX-p0.x,dy=e.clientY-p0.y;if(Math.abs(dx)+Math.abs(dy)>4)moved=true;
+    VB.x=start.vb.x-dx/r.width*start.vb.w;VB.y=start.vb.y-dy/r.height*start.vb.h;setVB()}
+  else if(ptrs.size===2&&start.pts.size===2){moved=true;const [a,b]=[...ptrs.values()],[a0,b0]=[...start.pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),d0=Math.hypot(a0.x-b0.x,a0.y-b0.y);
+    const k=d0/Math.max(d,1);const mx=(a0.x+b0.x)/2,my=(a0.y+b0.y)/2;const fx=(mx-r.left)/r.width,fy=(my-r.top)/r.height;
+    VB.w=start.vb.w*k;VB.h=start.vb.h*k;VB.x=start.vb.x+fx*(start.vb.w-VB.w);VB.y=start.vb.y+fy*(start.vb.h-VB.h);setVB()}});
+const up=e=>{ptrs.delete(e.pointerId);start={vb:{...VB},pts:new Map(ptrs)}};gs.addEventListener('pointerup',up);gs.addEventListener('pointercancel',up);
+gs.addEventListener('wheel',e=>{e.preventDefault();const k=Math.exp(e.deltaY*0.0012),p=toSvg(e.clientX,e.clientY);VB.x=p.x-(p.x-VB.x)*k;VB.y=p.y-(p.y-VB.y)*k;VB.w*=k;VB.h*=k;setVB()},{passive:false});
+gs.addEventListener('click',()=>{if(!moved){SEL=null;drawGraph();closeSheet()}});
+function fit(){const r=gs.getBoundingClientRect();const a=r.width/Math.max(r.height,1);VB.h=1150;VB.w=VB.h*a;if(VB.w<900){VB.w=900;VB.h=VB.w/a}VB.x=-30;VB.y=-30;setVB()}
+function tab(g){$('#gwrap').hidden=!g;$('#swrap').hidden=g;$('#tGraph').classList.toggle('on',g);$('#tSteps').classList.toggle('on',!g);try{localStorage.setItem('mtvtab',g?'g':'s')}catch(e){}
+  if(g){fit();loadGraph().then(fitH)}}
+function fitH(){const b=gs.getBBox(),r=gs.getBoundingClientRect(),a=r.width/Math.max(r.height,1);if(!b.height)return;VB.h=b.height+60;VB.w=VB.h*a;if(VB.w<640){VB.w=640;VB.h=VB.w/a}VB.x=b.x-30;VB.y=b.y-30;setVB()}   // at least two node columns across
+$('#gfit').onclick=e=>{e.stopPropagation();const b=gs.getBBox(),r=gs.getBoundingClientRect(),a=r.width/Math.max(r.height,1);let w=b.width+60,h=b.height+60;if(w/h<a)w=h*a;else h=w/a;VB={x:b.x-30,y:b.y-30,w,h};setVB()};
+$('#gfit').addEventListener('pointerdown',e=>e.stopPropagation());
+$('#tSteps').onclick=()=>tab(false);$('#tGraph').onclick=()=>tab(true);
+const _refresh=refresh;refresh=async function(){await _refresh();if(!$('#gwrap').hidden)await loadGraph();if(SHEET)renderSheet()};
+if(location.search.includes('key='))history.replaceState(null,'','/');
+let startTab='s';try{startTab=localStorage.getItem('mtvtab')||'s'}catch(e){}
+loadRuns().then(refresh).then(()=>{if(startTab==='g')tab(true)});
+</script></body></html>
