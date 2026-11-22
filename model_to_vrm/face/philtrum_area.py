@@ -32,10 +32,11 @@ while calls < min(4, int(os.environ.get('LLM_MAX_CALLS', '200'))):
     if not r or not r.get('box'): break
     bb = r['box']; g = dict(left=x0 + bb['left'] * (x1 - x0), right=x0 + bb['right'] * (x1 - x0), top=y0 + bb['top'] * (y1 - y0), bottom=y0 + bb['bottom'] * (y1 - y0)); area = (g['right'] - g['left']) * (g['bottom'] - g['top']); hist_.append((g, float(r.get('confidence') or 0), area))
     print('PA ask %d: box %s, confidence %.2f' % (calls, {k: round(x, 3) for k, x in g.items()}, hist_[-1][1]), flush=True)
-    if not (g['left'] <= mpu <= g['right'] and g['top'] <= mpv <= g['bottom']) and len(hist_) > 1: hist_.pop(); break   # the box has left the detector's own philtrum point: the one before stands
+    if not (g['left'] <= mpu <= g['right'] and g['top'] <= mpv <= g['bottom']) and len(hist_) > 1: hist_.pop(); continue   # the box has left the detector's own philtrum point: ask again on the same close-up (answers vary), within the call budget
     if len(hist_) > 1 and area >= hist_[-2][2]: hist_.pop(); break                                   # no smaller: the one before stands
     a = dict(box=g, confidence=hist_[-1][1]); w_, h_ = g['right'] - g['left'], g['bottom'] - g['top']; win = (max(0, g['left'] - w_ / 2), max(0, g['top'] - h_ / 2), min(1, g['right'] + w_ / 2), min(1, g['bottom'] + h_ / 2))
 if not a: raise SystemExit('Jev gave no box')
+if len(hist_) < 2: print('PA WARNING: no close-up box held the face detector philtrum point; the whole-head box is used and may take in the nose', flush=True)
 b = a['box']; MV = np.load(j('parts', 'orig_colours.npz'))['V'].astype(np.float64); MF = np.load(j('parts', 'orig_normals.npz'))['F']; vid = np.load(j('parts_zoom', 'head_vids.npy')); est = float(np.median(np.linalg.norm(MV[MF[:, 0]] - MV[MF[:, 1]], axis=1)))
 c = cams[view]; Mi = np.array(c['matrix_inv']); cc = MV[vid] @ Mi[:3, :3].T + Mi[:3, 3]; u = cc[:, 0] / c['scale'] + 0.5; v = 0.5 - cc[:, 1] / c['scale']; res = int(c['res'])
 px = np.clip((u * res).astype(int), 0, res - 1) + res * np.clip((v * res).astype(int), 0, res - 1); near = np.full(res * res, -np.inf); np.maximum.at(near, px, cc[:, 2])       # the camera looks down its -z: the nearest surface has the largest z
