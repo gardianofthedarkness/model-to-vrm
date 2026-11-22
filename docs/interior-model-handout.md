@@ -87,6 +87,7 @@ Left out of the static pilot and needed for animation (section 10): discrete cab
 - **Clearance model.** $p(c \mid \text{features})$ with features $\tau_e$, local curvature, distance to the garment's edge, material. A first family: a Gaussian truncated to $c \ge 0$, location $m$ and spread $s$ fitted separately for tight contact, loose panels and uncertain correspondence, on paired body and garment geometry. Its negative logarithm on the support, $(c - m)^2 / (2 s^2)$, is convex.
 - **Sources of paired data:** the user's characters where the body under an outfit is known; simulated garments on CT bodies; an independent cloth-simulation dataset (named in review, unverified). A retained *pre-compression* body mesh gives the clearance only where the garment does not press the skin in; it cannot say how far a waistband pushed.
 - **Both skins are predicted**: the reference skin (which the anatomy belongs to) and the current skin (which the cloth touches).
+- **The swimsuit base (the user's answer to U1).** An unclothed body cannot be generated (the image service flags it). The nearest obtainable thing is the same character generated in a swimsuit as the base model. That gives bare skin, an equality, over the limbs, shoulders, back and most of the trunk, and leaves tight cloth over the pelvis and chest only. Two consequences. First, the anatomy is fitted on the swimsuit base, where almost everything is observed; the remaining cloth is tight and small, but it covers exactly the regions that bridge (between the breasts, the crotch, under the buttocks), so those stay inequalities. Second, a clothed version of the same character is a second, independent generation: it is not the same geometry with cloth added, so the difference between the two after registration mixes garment clearance with generation drift. The drift must be measured on regions bare in both (it is the noise floor of any clearance read from the pair) before the pair is used to calibrate $p(c \mid 	ext{features})$.
 
 ## 6. Inference: prior plus one likelihood
 
@@ -200,7 +201,7 @@ Who drives the bones matters. For an animator or a motion-capture clip, $\theta_
 
 **T5 Paradigms.** Per-slice (A), shared state with slice supervision (B), plus off-plane supervision (C).
 
-**T6 Outfits on one known body**, the body mesh kept for scoring.
+**T6 Outfits on one known body.** On CT bodies with simulated garments the body is known exactly. On characters, the swimsuit base stands in for the known body: fit the anatomy on the base, then on the clothed generation of the same character, and compare, after measuring generation drift on regions bare in both. This measures repeatability plus drift, not accuracy.
 
 **T7 Posture.** Supine reference to a standing character: as a known load producing $u$, or as a conditioned prior.
 
@@ -233,7 +234,7 @@ Reported by the data session, not re-checked by me: one whole-body CT set of 1,2
 Answered (as I read the user's reply "Acceptable to me" to the two yes-or-no questions): anonymised research CT may be used, kept in private storage; CT faces may be rendered inside private jobs, with nothing leaving them.
 
 Open:
-- **U1.** Is the unclothed body mesh under a character's outfit available, or can outfits be fitted onto a known body?
+- **U1 (answered).** No unclothed body is available. The base model can be generated in a swimsuit; outfits are separate generations of the same character (section 5).
 - **U2.** Which skin is the deliverable where they differ: the reference (default) or the body as worn?
 - **U5.** For animation, will motion come from clips (given joint coordinates) or must the character also move by its own muscles?
 
@@ -246,7 +247,7 @@ The reference world model's architecture; every work cited by the reviewer (incl
 ## 16. Research questions for the next round
 
 1. **Layer parametrisation:** where normal-offset lines cross (inner thigh, armpit, trunk), and the minimal alternative.
-2. **The clearance family:** beyond the truncated Gaussian, a family that stays convex and handles uncertain correspondence; the estimator of $R$ from curvature and its bias.
+2. **The clearance family:** beyond the truncated Gaussian, a family that stays convex and handles uncertain correspondence; the estimator of $R$ from curvature and its bias; and how to separate garment clearance from generation drift when the base and the clothed character are two independent generations.
 3. **Posterior under inequalities:** a calibrated approximation for 8.2, with its expected failure cases.
 4. **The muscle-fat split:** which measurements or person facts reduce the $(1,-1)$ uncertainty, and how T1b should be scored.
 5. **Mechanics priors:** what published tissue tests support for $\alpha$, $r_n$, $\ell_s$ per region, in proportions; the co-rotated membrane term.
