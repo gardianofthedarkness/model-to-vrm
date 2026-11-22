@@ -27,7 +27,7 @@ def ask(img_bytes, what):
 PT = np.load(j('parts_zoom', 'head', 'points3d.npz'))['X'].astype(np.float64); c_ = cams[view]; Mi_ = np.array(c_['matrix_inv']); mp_ = ((PT[33] + PT[51]) / 2) @ Mi_[:3, :3].T + Mi_[:3, 3]; mpu, mpv = mp_[0] / c_['scale'] + 0.5, 0.5 - mp_[1] / c_['scale']   # the face detector's own point between nose base and upper lip
 full = cv2.imread(png); R_ = full.shape[0]; win = (0.0, 0.0, 1.0, 1.0); a = None; calls = 0; hist_ = []
 while calls < min(4, int(os.environ.get('LLM_MAX_CALLS', '200'))):
-    x0, y0, x1, y1 = win; crop = full[int(y0 * R_):int(y1 * R_), int(x0 * R_):int(x1 * R_)]; crop = cv2.resize(crop, (R_, int(R_ * crop.shape[0] / crop.shape[1])), interpolation=cv2.INTER_CUBIC)
+    x0, y0, x1, y1 = win; crop = full[int(y0 * R_):int(y1 * R_), int(x0 * R_):int(x1 * R_)]; sc_ = R_ / max(crop.shape[:2]); crop = cv2.resize(crop, (max(1, int(round(crop.shape[1] * sc_))), max(1, int(round(crop.shape[0] * sc_)))), interpolation=cv2.INTER_CUBIC)   # longer side = the view's own size (the decision API refuses larger images)
     r = ask(cv2.imencode('.png', crop)[1].tobytes(), 'A front render of the head of a 3D figure.' if calls == 0 else 'A close-up of the middle of the face of a 3D figure, front view.'); calls += 1
     if not r or not r.get('box'): break
     bb = r['box']; g = dict(left=x0 + bb['left'] * (x1 - x0), right=x0 + bb['right'] * (x1 - x0), top=y0 + bb['top'] * (y1 - y0), bottom=y0 + bb['bottom'] * (y1 - y0)); area = (g['right'] - g['left']) * (g['bottom'] - g['top']); hist_.append((g, float(r.get('confidence') or 0), area))
