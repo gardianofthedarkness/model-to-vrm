@@ -1,262 +1,329 @@
-# Interior model: mathematical construction and research handout (version 2)
+# Interior model: mathematical construction and research handout (version 3)
 
-**Status: a proposal, not a built system.** Nothing here has been trained or tested. Version 2 replaces the per-slice design of version 1 as the main proposal after one round of outside review. Section 1 records what changed and why, section 9 holds the disagreements that the next rounds of research should settle, and section 11 lists what nobody has verified yet.
+**Status: a proposal, not a built system.** Nothing here has been trained or tested. Version 3 follows three rounds of outside review and one census of the data actually available. Section 1 records what changed, section 4 is new (clothing), section 11 holds the open disagreements, section 13 lists what nobody has verified.
 
 ## 0. Purpose
 
-We fit an anatomy atlas (bones, muscles) inside a generated 3D character with least-squares and convex optimisation. The optimiser knows hard rules (bones inside the body, seams closed, left and right alike) but knows very little about where tissue lies under a given surface: nine CT tissue-depth points on the face and the atlas's own proportions elsewhere. Those sparse numbers, each predicted alone, lost against the other terms (the bone under the upper lip stayed 3 mm too deep through five runs, until a rule was written by hand). We want a learned model that, from the outer surface alone, predicts the interior **with every part in the context of all the others**, with a calibrated uncertainty, in a form the optimiser can use directly.
+We fit an anatomy atlas (bones, muscles) inside a generated 3D character by least squares and convex optimisation. The optimiser knows hard rules (bones inside the body, seams closed, left and right alike) but little about where tissue lies under a given surface. Sparse hand-fed numbers lost against the other terms: the bone under the upper lip stayed 3 mm too deep through five runs, until a rule was written by hand. We want a learned model that, from the outer surface alone, predicts the interior **with every part in the context of all the others**, with calibrated uncertainty, in a form the optimiser uses directly.
 
-The user's requirements: cross-sections ("critical slices") at important places are the working currency; all predictions for one person share context (neighbouring slices, overall appearance, age and other basic facts, the 3D structure around each slice); confident predictions act as fixed points for the optimiser; a transformer with diffusion is the preferred family.
+The user's requirements: cross-sections ("critical slices") at important places are the working currency; all predictions for one person share context (neighbouring slices, overall appearance, age, the 3D structure around each slice); confident predictions guide the optimiser; a transformer with diffusion is the preferred family; **the input character wears clothes**, kept close to the body where the user can arrange it, and that part must be handled carefully.
 
-## 1. What changed from version 1, and why
+## 1. What changed, and why
 
-Version 1 predicted each slice's interior as its own token, jointly through attention. A review (by another model, given version 1) raised the points below. I have not verified the papers it cited; its reasoning stands on its own where I adopt it.
+### 1.1 From version 2 to version 3 (third review round, data census, clothing)
 
-| # | Point raised | Verdict | Where it lands in this version |
+| # | Point | Verdict | Where it lands |
 |---|---|---|---|
-| 1 | Version 1 cut the training planes from CT **bone** labels, while the figure's planes come from surface keypoints. The plane then tells the model about the bone it must predict. | **Accepted: an error in version 1.** | Section 3: planes from the skin only, by the same code on both sides. Bone-derived planes kept only as an oracle comparison. |
-| 2 | Version 1 said the regression baseline gives no joint samples. A Gaussian with shared factors does. | **Accepted: an error in version 1.** | Section 5: low-rank-plus-diagonal Gaussian is the first head, not a straw man. |
-| 3 | Slice tokens that attend to each other can still draw one bone in incompatible places. Predict one anatomy per person and cut every slice from it. | **Accepted, with a change** (section 9.1): the anatomy is expressed in the optimiser's own deformation parameters. | Sections 4 and 6. |
-| 4 | Train on the person's 3D anatomy; use slices as one of several kinds of supervision. CT has evidence between the critical planes that a slice-only loss ignores. | **Accepted.** | Section 7. |
-| 5 | Predicting "the next slice from previous slices" is a weak objective here: a generated slice adds no new evidence about the hidden anatomy, unlike a new photograph of a scene. | **Accepted.** | No autoregressive slice objective. Observed or artist-approved slices may still be given as conditions (section 5.4). |
-| 6 | Encode how each plane sits relative to the others (position and orientation), not only distance along the body. | **Accepted.** | Section 5.2. |
-| 7 | Do not canonicalise a slice by the phase of its first Fourier term; near a centred ring the phase is unstable. | **Accepted.** | Section 3.3. |
-| 8 | Masked loss with noise in unlabelled slots does not identify correlations between structures that are never labelled together. | **Accepted.** | Section 7.4. |
-| 9 | Simulate hair and clothing as connected 3D regions across planes, not as independent offsets per ring. | **Accepted.** | Section 7.5. |
-| 10 | Age can stand in for the scan's source (hospital, protocol). | **Accepted.** | Section 8. |
-| 11 | Use the full cross-slice covariance in the optimiser, or nearby predictions count as independent votes. | **Accepted; automatic in this version** (one covariance over the shared state). | Section 6. |
-| 12 | Exact equality only for observed or artist-fixed points; learned anchors get calibrated bounds. | **Accepted in part** (section 9.5 keeps the user's "fixed points" as an open design question). | Section 6.3. |
-| 13 | Start with a Gaussian head; promote diffusion only if it wins a fair comparison. | **Kept as the comparison protocol, not as the decision** (section 9.4). The user prefers diffusion. | Section 5.3, section 8. |
-| 14 | Fit a statistical shape basis to human skulls and sample from it. | **Disputed** (section 9.2): the figure is far outside human skull variation. | The prediction is a prior the optimiser may leave, never the final anatomy. |
+| 1 | Training targets are atlas fits to CT. Where the labels leave a region underdetermined, our own stiffness and shape rules supply the answer, and the model learns our bias, not anatomy. | **Accepted: the main risk.** We know the bias exists (the philtrum). | Sections 8.1, 9 (Test 0). Targets are measurements, not fitted parameters. |
+| 2 | With global shape coefficients, "missing labels" are not missing coordinates: a partial view constrains combinations of coefficients. | **Accepted: an error in version 2.** | Section 8.2: likelihood in measurement space. |
+| 3 | "Score a draw or the mean" mixes two objectives; squared error on a random draw punishes spread and collapses the distribution. | **Accepted: an error in version 2.** | Section 8.3. |
+| 4 | Runs B and C were confounded: a basis learned from full 3D fits already gives B off-plane information. | **Accepted.** | Section 9, Test 2. |
+| 5 | A covariance pseudo-inverse gives zero penalty in directions the data never saw; a singular Gaussian gives zero probability there. With about 1,400 graph parameters and a few hundred people, most directions are unseen. | **Accepted.** | Section 7.1: three kinds of direction, each with its own treatment. |
+| 6 | A Gaussian prior gives back a fixed fraction of whatever the surface asks; a Huber-type penalty pulls back by a bounded amount. | **Accepted** as the answer to version 2's question on tails. | Section 7.2. |
+| 7 | A bound derived from the same model as the prior counts that model twice. | **Accepted**, with a note on why our hand rule was needed (section 11.4). | Section 7.3. |
+| 8 | A global coefficient has no single place on the body; do not split coefficients by structure. | **Accepted.** | Section 6.1. |
+| 9 | Fix the gauge by removing global pose and scale, area-weighting displacements, and taking the minimum-norm representative. | **Accepted.** | Section 5.2. |
+| 10 | Split the oracle test into measurement, full fit, and compression. | **Accepted.** | Section 9, Test 0. |
+| 11 | **Data census:** the CT set we hold has 1,228 people but only 38 full faces (110 at most). Open sets could bring faces to about 130 to 200. Large pools need an institution. | Fact (reported by the data session, not re-checked by me). | Section 10: body first; the face model is small and statistical for now. |
+| 12 | **Clothing** (the user): characters are clothed; cloth is kept close to the body where possible. | New requirement. | Section 4. |
+| 13 | Stylisation is systematic, not random (my addition). | Open. | Section 11.2. |
+
+### 1.2 Kept from version 2
+
+One shared anatomical state per person, in the optimiser's own deformation parameters; every slice cut from it; planes from the outer surface only; relative plane geometry in attention; Gaussian, mixture and diffusion heads compared on equal terms; slices as inputs, supervision and readouts; no autoregressive next-slice objective; observed or artist-approved slices as extra conditions.
 
 ## 2. Objects and notation
 
-**Person and size.** Person or figure $p$, surface $\mathcal S_p \subset \mathbb R^3$. All lengths are proportions of a size $S_p$ that can be measured on both a CT body and the figure from the surface alone (open: stature is not available for a head-only CT; see 10.3).
+**Person and size.** Person or figure $p$; observed outer surface $\mathcal O_p$ (what a camera or scanner sees: skin, cloth, hair); true skin $\mathcal S_p$. All lengths are proportions of a size $S_p$ measurable from the outer surface on CT and on the figure alike (open: 12.3).
 
-**Atlas.** A fixed template: vertices $x \in \mathcal A$, each belonging to a structure $c(x)$ (a bone, a muscle, a cartilage), with skin, bones and muscles in one coordinate frame.
+**Materials.** Each point $q \in \mathcal O_p$ has a label $m(q) \in \{\text{skin}, \text{cloth}, \text{hair}, \text{prop}\}$ (for the figure: from the segmentation and labelling steps; for CT: skin, unless cover is simulated).
 
-**Deformation state.** The optimiser already describes an individual anatomy by a parameter vector $z \in \mathbb R^{n}$ acting on the atlas. Two forms exist in code:
+**Atlas and state.** A template with vertices $x \in \mathcal A$, each in a structure $c(x)$ (a bone, a muscle, a cartilage, **the skin**). An individual is a parameter vector $z$:
 
-- *Deformation graph* (skull): nodes $g_j$ on the bones, each with a $3 \times 3$ matrix $A_j$ and a shift $t_j$; a point moves with the nodes of its own bone,
-  $$ D_z(x) = x + \sum_j w_j(x) \big[ (A_j - I)(x - g_j) + t_j \big], \qquad z = \big(\mathrm{vec}(A_j - I),\, t_j\big)_j \;\oplus\; (\text{whole-skull pose and size}). $$
-  $D_z(x)$ is **linear in $z$**: $D_z(x) = x + B(x)\, z$ with a sparse matrix $B(x)$.
-- *Jointed bones* (body): per bone $b$ a turn $r_b$, shift $t_b$, log-size $s_b$ and two log-stretches $e_b, f_b$ along the bone's own axes $a_b, a'_b$,
-  $$ T_b(x) = c_b + e^{s_b}\, \mathrm{Rot}(r_b) \big( I + (e^{e_b} - 1)\, a_b a_b^\top + (e^{f_b} - 1)\, a'_b a'^{\top}_b \big)(x - c_b) + t_b , $$
-  nonlinear in $z$, linearised at each step of the fit.
+- deformation graph (skull): $D_z(x) = x + \sum_j w_j(x)\,[(A_j - I)(x - g_j) + t_j]$, so $D_z(x) = x + B(x)\, z$, linear in $z$;
+- jointed bones (body): $T_b(x) = c_b + e^{s_b} \mathrm{Rot}(r_b)\big(I + (e^{e_b}-1) a_b a_b^\top + (e^{f_b}-1) a'_b a'^{\top}_b\big)(x - c_b) + t_b$, linearised at each step.
 
-**The shared anatomical state is $z$.** One value of $z$ is one complete interior. Everything the model outputs is a statement about $z$.
+**The shared anatomical state is $z$**, and it includes the skin: $\mathcal S(z) = D_z(\mathcal A_{\text{skin}})$ is the model's own statement of where the bare body surface is.
 
-**Slice planes.** For segment $s$ with axis path $\gamma_s$ and level $t \in [0,1]$, the plane $\Pi_k$, $k = (s,t)$, through $o_k = \gamma_s(t)$ with frame $R_k = [e_1^k, e_2^k, n_k]$: the plane of least cut area of the segment's surface, $e_1^k$ toward a roll landmark. **Axis paths, levels and landmarks are computed from the outer surface only** (section 3.1).
+**Planes and readouts.** Plane $\Pi_k$ with origin $o_k$ and frame $R_k = [e_1^k, e_2^k, n_k]$, from the outer surface only. On it: the observed outline $\rho^{\text{obs}}_k(\theta_j)$, the model's skin outline $\rho^{\text{skin}}_k(\theta_j; z)$, the section of each structure $\Omega_{k,c}(z)$, and depths along each ray (skin to lean tissue $d_k$, skin to bone $\beta_k$) with a validity flag where a ray meets no bone.
 
-**Slice readouts.** On plane $k$, with angles $\theta_j = 2\pi j / J$:
+**Person facts.** $g_p = (\text{sex}, \text{age}, \text{size}, \dots)$, each with a known/unknown flag.
 
-- skin outline $\rho_k(\theta_j)$: first surface point of the segment along the ray, over $S_p$;
-- for a state $z$, the section of each structure, $\Omega_{k,c}(z) = D_z(\mathcal A_c) \cap \Pi_k$, and from it the key lines $\partial\Omega_{k,c}(z)$, the skin-to-bone depth $\beta_k(\theta_j; z)$ and the skin-to-lean depth $d_k(\theta_j; z)$ along each ray, with a validity mask where a ray meets no bone.
-
-A section may consist of several loops; nothing here assumes one star-shaped outline.
-
-**Person facts.** $g_p = (\text{sex}, \text{age}, \text{size}, \dots)$, each entry possibly unknown, with its own known/unknown flag.
-
-## 3. Inputs: what the model sees
+## 3. Inputs
 
 ### 3.1 No interior information in the inputs
 
-For a CT person the pipeline that produces the inputs must be exactly the figure's pipeline, run on the CT **skin**: keypoints detected on renders of the skin, joints and axes from those keypoints, planes from the skin. Bone labels are used only to make targets. Planes built from bone labels are kept as an *oracle* condition; the gap between oracle and skin-only results measures how much accuracy depends on knowing the skeleton in advance.
+The pipeline that produces inputs for a CT person is the figure's pipeline run on the CT's outer surface: keypoints on renders, axes from keypoints, planes from the surface. Bone labels make targets only. Bone-derived planes are an oracle condition.
 
 ### 3.2 Three sources of context
 
-1. **Whole-person appearance:** the visible outer geometry, including the surface between critical planes, as a decimated point set $\{(q_i, \nu_i, m_i)\}$ (position, normal, seen/covered flag) in proportions; plus $g$.
-2. **Local surface around each plane:** nearby surface points in the plane's own frame, with their signed height above or below the plane; the angular outline $\rho_k$, the visibility mask $m_k$, the plane's tilt.
-3. **Other planes:** through attention with the relative geometry of section 5.2; and, when supplied, observed or artist-approved interior slices (section 5.4).
+1. **Whole-person appearance:** the outer geometry as a point set $\{(q_i, \nu_i, m_i)\}$ (position, normal, material) in proportions, plus $g$.
+2. **Local surface around each plane:** nearby points in the plane's frame with signed height, the outline $\rho^{\text{obs}}_k$, materials around the ring, tilt.
+3. **Other planes**, through attention with relative geometry (section 6.2); and observed or artist-approved interior slices when supplied.
 
 ### 3.3 Symmetries
 
-- **Roll of a plane frame by $\delta$:** $\rho(\theta) \mapsto \rho(\theta - \delta)$; in Fourier coefficients $\hat\rho[n] \mapsto e^{-in\delta} \hat\rho[n]$; for an in-plane map $U$, contour points $u \mapsto U u$ and a covariance $C \mapsto U C U^\top$. The anatomical roll landmark is kept. Slices are **not** canonicalised by $\arg \hat\rho[1]$, which is unstable when $\hat\rho[1] \approx 0$.
-- **Mirror:** the reflection $\mathsf M$ swaps left and right segments and structures and maps $\theta \mapsto -\theta$. Because the state is $z$, mirror equivariance is the single condition $p(\mathsf M z \mid \mathsf M \mathcal S, g) = p(z \mid \mathcal S, g)$ with $\mathsf M$ acting on atlas parameters (for the deformation graph: $A_j \mapsto M A_{\bar j} M$, $t_j \mapsto M t_{\bar j}$ with $\bar j$ the mirror node and $M = \mathrm{diag}(-1,1,1)$).
-- **Size:** removed by proportions.
-- **Gauge:** $z$ is not unique for a given shape (the whole-skull pose can be absorbed into node transforms; neighbouring nodes can trade stretch for shift). Targets must be put in a canonical form before learning (open: 10.2).
+Roll of a plane frame: $\rho(\theta) \mapsto \rho(\theta - \delta)$; the anatomical roll landmark is kept, and slices are not canonicalised by the phase of the first Fourier term. Mirror: one condition on the state, $p(\mathsf M z \mid \mathsf M \mathcal O, g) = p(z \mid \mathcal O, g)$. Size: removed by proportions.
 
-## 4. The model's output: a distribution over the shared state
+## 4. Clothing: the observed surface is not the skin
 
-$$ p_\vartheta\big(z \mid \mathcal S_p,\, g_p\big). $$
+This section is new. It is where a clothed character differs from every CT body, and it interacts with the hard rules of the fit: "bones and muscles inside the body" must mean inside the **skin**, which under cloth is not observed.
 
-One draw $z^{(i)}$ is one interior; every slice, ray or oblique section requested later is cut from the same draw and is therefore consistent with every other. Requesting an axial slice today and an oblique slice through the same place tomorrow gives the same bone where they meet, provided the draw is kept.
+### 4.1 The observation model
 
-**Reduced coordinates.** $z$ is high-dimensional (a skull graph has roughly 120 nodes times 12 numbers) and gauge-redundant. Let $\{z_p\}$ be the canonical states obtained by fitting the atlas to the training CTs with full interior labels (section 7.1), and
-$$ z = \bar z + W a + \eta, \qquad a \in \mathbb R^{r}, $$
-with $W$ the leading directions of the training fits **measured in geometry, not in parameters**: principal components of the stacked vertex displacements $B z_p$ (so that a direction's weight is the movement it causes), mapped back to $z$. The model predicts $a$. $\eta$ is what the basis cannot express; its size on held-out people is the *oracle representation error* and must be measured before anything else (section 8, test 0).
+For an outer-surface point $q$ with outward direction $\nu$,
+$$ q = s(q) + \delta(q)\, \nu, \qquad s(q) \in \mathcal S, \quad \delta(q) \ge 0 , $$
+where $\delta$ is the gap between skin and the outside of the cover.
 
-## 5. The network
+- Bare skin: $\delta = 0$ up to surface noise, $q - s \sim \mathcal N(0, \sigma_{\text{surf}}^2)$.
+- Cloth: $\delta \ge 0$ always (cloth is never inside the body). This is a **one-sided** observation: the skin is at or under the cloth, never outside it.
+- Hair and props: $\delta \ge 0$ with no useful upper limit; they say almost nothing about the skin beneath.
 
-### 5.1 Tokens
+So a clothed character gives, for the skin, equalities on bare patches and inequalities elsewhere:
+$$ \rho^{\text{skin}}_k(\theta; z) = \rho^{\text{obs}}_k(\theta) \ \text{(skin)}, \qquad \rho^{\text{skin}}_k(\theta; z) \le \rho^{\text{obs}}_k(\theta) \ \text{(cloth, hair, prop)}. $$
 
-- person token: $h_0 = E_g(g)$ with known/unknown flags;
-- surface tokens: a learned set encoder over the point set of 3.2(1), giving $n_s$ tokens (patches of the outer surface);
-- plane tokens: for each critical plane $k$, $E_x(\hat\rho_k[0..N], m_k, \text{tilt}_k, \text{local points})$;
-- state tokens (the output side): the current noisy estimate of $a$, split per structure group so that a structure can attend to the planes and surface near it.
+### 4.2 What "close to the body" buys, and its three components
 
-### 5.2 Attention with relative geometry
+For tight cloth write
+$$ \delta(q) = \tau_{\text{fabric}} + \delta_{\text{bridge}}(q) + \delta_{\text{fold}}(q) . $$
 
-Pre-norm transformer blocks with logits
-$$ A_{ij} = \frac{\langle W_Q h_i, W_K h_j\rangle}{\sqrt d} + b_{\mathrm{rel}(i,j)}\big(\phi(d_{ij}, Q_{ij})\big), $$
-where for two plane tokens
-$$ d_{ij} = R_i^\top (o_j - o_i)/S, \qquad Q_{ij} = R_i^\top R_j , $$
-the position and orientation of plane $j$ seen from plane $i$'s frame, and analogous relative positions for surface and state tokens (a state token sits at its structure's atlas centre carried by the current estimate). $\mathrm{rel}$ still distinguishes same segment, adjacent segment, mirror partner and other, because a hand resting against the trunk is close in space and far in anatomy. With 8 to 12 head planes and at most a few hundred tokens, full attention is cheap; the geometry is there for statistical efficiency.
+- $\tau_{\text{fabric}}$: the fabric's own thickness, roughly constant over a garment. **Measurable on the figure itself**: wherever a garment ends on bare skin (hem, neckline, cuff) the step from skin to cloth across the edge is $\tau_{\text{fabric}}$ plus noise. Collect these steps per garment; their distribution is that garment's thickness prior. No number is assumed.
+- $\delta_{\text{bridge}}$: cloth under tension does not follow concavities (between the breasts, the small of the back, the crotch, the armpit, under the buttocks). There the gap equals the depth of the concavity that the cloth spans. Geometrically, tight cloth lies near the surface obtained by rolling a ball of some radius $R$ over the body (a morphological closing), so
+  $$ \delta_{\text{bridge}}(q) \approx \mathrm{close}_R(\mathcal S)(q) - \mathcal S(q) \ge 0 , $$
+  zero on convex regions and positive in hollows. $R$ is a property of the garment's tension; it is estimable from the observed cloth alone, since a closed surface cannot have concavities sharper than $1/R$: the largest concave curvature present on the cloth bounds $1/R$ from above.
+- $\delta_{\text{fold}}$: wrinkles and loose panels; non-negative, spatially sparse, large where present.
 
-### 5.3 Heads over the same state (to be compared on equal terms)
+Two consequences. First, on convex, tight regions (thigh front, upper arm, chest above the bust) the cloth outline is the skin outline plus a nearly constant, measurable offset: almost as good as bare skin. Second, in spanned hollows the cloth is uninformative about depth: the skin could be anywhere between the cloth and a deep hollow. The model must know which case it is in. That is decidable from the cloth's own geometry: a region where the cloth is flat or ruled while the body, by symmetry or by the neighbouring bare skin, should be concave, is a bridged region.
 
-- **Gaussian, low rank plus diagonal:**
-  $$ a = \mu(\cdot) + L(\cdot)\,\xi + D(\cdot)^{1/2} \epsilon, \qquad \xi \sim \mathcal N(0, I_q),\ \epsilon \sim \mathcal N(0, I_r), $$
-  trained by negative log-likelihood. It gives joint samples and a full covariance $\Sigma_a = L L^\top + D$.
-- **Mixture of such Gaussians** (a cheap test for several plausible interiors).
-- **Diffusion or rectified flow over $a$:** $a^\tau = \alpha_\tau a^0 + \sigma_\tau \varepsilon$, a velocity network $f_\vartheta(a^\tau, \tau, \text{tokens})$, loss $\mathbb E \| v - f_\vartheta \|^2$ weighted as in 7.3; samples by a deterministic solver; moments $\mu_a, \Sigma_a$ from the samples.
+### 4.3 Compression
 
-The encoder, planes, basis, splits and evaluation are identical across heads. This is the user's preferred family (transformer plus diffusion) with the simplest alternative alongside, so that the gain from diffusion is measured rather than assumed.
+Tight cloth also pushes soft tissue in (waistbands, straps, elastic edges), so the skin under cloth is not the skin the same body would have unclothed. The atlas and CT statistics describe uncompressed bodies. For the interior this matters little for bone and much for fat. We treat compression as part of $\delta$ being small rather than model it; a visible groove at an elastic edge is a local reduction of fat depth, not of bone depth (open: 12.9).
 
-### 5.4 Observed interior as a condition
+### 4.4 How it enters the model
 
-If some interior is genuinely known (a real scan slice, an artist-approved key line), it enters as extra tokens with their plane pose and an "observed" flag, and training includes examples with none, one or several such slices. A generated slice is never fed back as if it were evidence.
+- **Inputs.** Each surface token carries its material, and for cloth the garment's estimated $\tau_{\text{fabric}}$ distribution, its estimated $R$, and a local bridging indicator $\kappa(q)$ computed from the cloth's curvature relative to its surroundings.
+- **Outputs.** The skin is part of the state, so the model predicts the bare body under the clothes together with the interior, and they are consistent by construction.
+- **Likelihood of the outer surface given the state** (used in training with simulated cover, and in the optimiser):
+  $$ -\log p(\mathcal O \mid z) = \sum_{q:\,\text{skin}} \frac{\|q - s_z(q)\|^2}{2\sigma_{\text{surf}}^2} \;+\; \sum_{q:\,\text{cloth}} \phi\big(\delta_z(q);\ \tau_{\text{fabric}}, \kappa(q)\big) \;+\; \sum_{q:\,\text{hair, prop}} \iota_{\ge 0}\big(\delta_z(q)\big) , $$
+  with $\delta_z(q) = \langle q - s_z(q), \nu \rangle$, $\iota_{\ge 0}$ the indicator of $\delta \ge 0$, and $\phi$ a convex one-sided penalty: infinite for $\delta < 0$, minimal near $\delta = \tau_{\text{fabric}}$ on convex tight regions, and flat (uninformative) for $\delta > \tau_{\text{fabric}}$ where $\kappa$ says the cloth is bridging. Each term is convex in $\delta$, and $\delta_z$ is linear in $z$ for the deformation graph, so the whole expression stays inside a convex fit.
+- **Hard rules.** "Inside the body" becomes: bones and muscles inside $\mathcal S(z)$, the model's own skin, with the skin itself constrained by 4.1. This replaces testing against the observed surface, which under hair and loose cloth is not the body (the current pipeline handles that by hand-built rules: limb pieces, boxes from a decision model, the mirror image).
 
-## 6. Into the optimiser
+### 4.5 Borrowing across the body
 
-### 6.1 The prior is in the optimiser's own variables
+Under cover the skin is inferred from: (a) bare skin elsewhere on the same person; (b) the mirror side if it is less covered; (c) continuity across a garment's edge, where skin and its slope are seen on one side; (d) the population prior over $z$; (e) the interior itself, since skin, fat and bone are jointly distributed. All of these are what the shared state and the attention relations of section 6 are for; nothing extra is needed beyond the materials on the tokens.
 
-$$ \min_z \;\; \| A z - b \|_2^2 \;+\; \big(z - \mu_z\big)^{\!\top} \Sigma_z^{+} \big(z - \mu_z\big) \quad \text{s.t.} \quad G z \le h,\;\; E z = e , $$
-with $\mu_z = \bar z + W \mu_a$, $\Sigma_z = W \Sigma_a W^\top + \Sigma_\eta$ ($\Sigma_\eta$ the measured covariance of what the basis misses) and $\Sigma_z^{+}$ its (regularised) inverse. $\|Az - b\|^2$ holds the existing terms, $Gz \le h$ the linearised inside rule, $Ez = e$ exact ties. Because the prior is one quadratic form over one state, ten nearby readouts of the same uncertain displacement count once, not ten times. No per-slice linearisation is needed for the prior itself.
+### 4.6 Training for clothing with unclothed CT
 
-### 6.2 Slices as readouts and as supervision
+CT bodies are bare (or under a thin gown and a blanket, which are separate from the body and can be removed as low-density sheets; unverified, 13). Clothed inputs must be simulated:
 
-Critical slices remain the working currency in three places: as inputs (outlines), as supervision during training (section 7.2), and as the view in which a person checks or corrects the result. They are no longer separate predictions.
+1. choose a garment region as a connected patch of the CT skin (a shorts, top, sleeve or stocking pattern), not independent arcs;
+2. build the cover surface as $\mathrm{close}_R(\mathcal S)$ over the patch, offset outward by $\tau_{\text{fabric}}$, with $R$ and $\tau$ drawn from distributions fitted to real garments on real characters (edge steps for $\tau$, maximal concave curvature for $R$);
+3. optionally add folds as sparse outward bumps along lines;
+4. label the patch as cloth and hand the model only the outer surface.
 
-### 6.3 Fixed points
+The true skin is known, so the skin-under-cloth error is measured exactly. Hair is simulated as thick, irregular cover with no upper bound on $\delta$.
 
-A learned quantity $\ell(z)$ (for example the bone depth on a named ray) with predicted mean $\mu_\ell$ and spread $\sigma_\ell$ can enter as (a) nothing beyond the prior, (b) a calibrated bound $|\ell(z) - \mu_\ell| \le \kappa\, \sigma_\ell$, or (c) an equality. Version 2 proposes (b) for learned quantities and (c) only for observed or artist-fixed points; whether a sufficiently confident prediction should be allowed to become (c) is open (section 9.5).
+### 4.7 Tests specific to clothing
 
-### 6.4 Several modes
+- **Synthetic:** skin-under-cloth error and interior error as functions of covered fraction, $R$ and $\tau$; separately on convex regions and in hollows.
+- **Outfit invariance on real characters:** the same character generated in two different outfits should yield the same skeleton and the same bare-skin estimate where both are covered. No ground truth is needed; the disagreement between the two fits is the error measure. A bare-limbed and a covered version of the same limb is the cleanest case.
+- **Edge consistency:** the predicted skin under a garment must meet the observed skin at the garment's edge in position and slope.
+- **Ablation:** materials only, against materials plus $\tau$, $R$ and $\kappa$.
 
-If $p(z \mid \cdot)$ has well-separated modes, the quadratic around the mean is wrong. Fit each mode separately and compare the fit cost plus the mode's log-probability.
+### 4.8 What the user controls
 
-## 7. Training
+Keeping cloth close to the body shrinks $\delta_{\text{fold}}$ and makes $\tau_{\text{fabric}}$ the dominant term, which is the favourable case of 4.2. What it cannot remove is bridging over hollows and all of the hair. A character whose important regions (face, hands, the limbs' convex surfaces) are bare or tightly covered gives the model equalities or near-equalities there; skirts, capes, long hair over the back and loose sleeves give only inequalities.
 
-### 7.1 Targets: fitting the atlas into each CT
+## 5. The model's output: a distribution over the shared state
 
-For each training CT with interior labels, run the atlas fit with the labels as data (bone surfaces, and muscle surfaces where labelled) to obtain a canonical $z_p$. This is the expensive part of data preparation and the place where label coverage matters: a structure with no label in any scan gets its $z$ only from the atlas prior and must not be counted as learned.
+### 5.1 The distribution
 
-### 7.2 Supervision at several scales, from the same person
+$$ p_\vartheta\big(z \mid \mathcal O_p,\, g_p\big). $$
+One draw is one complete body: skin under the clothes, bones, muscles. Every slice or ray requested later is cut from the same draw.
 
-Encode the exterior once, then score a draw or the mean against queries taken from that person's CT:
+### 5.2 Canonical form and reduced coordinates
 
-| Query | Loss | What it teaches |
+Before any statistics: remove the global pose and size from $z$ in one fixed way; among parameter vectors giving the same vertex positions take the minimum-norm one; measure a displacement by its area-weighted vertex norm, $\|u\|_{\mathcal A}^2 = \sum_x \omega_x \|B(x) u\|^2$ with $\omega_x$ the vertex areas, so that dense tessellation does not dominate. Then
+$$ z = \bar z + W a + \eta, \qquad a \in \mathbb R^r , $$
+with $W$ the leading directions in the $\|\cdot\|_{\mathcal A}$ geometry and $\eta$ what the basis cannot express. Optional regional residual modes (for example for the upper jaw) are added only if Test 0 shows the global basis loses them.
+
+## 6. The network
+
+### 6.1 Tokens
+
+Person token; surface-patch tokens from a set encoder over the outer point set with materials; plane tokens; **global coefficient tokens** for the noisy $a$ (not assigned to structures); **structure-query tokens** anchored at each structure's place on the reference atlas, which read out local quantities (depths, key lines) for supervision.
+
+### 6.2 Attention with relative geometry
+
+$$ A_{ij} = \frac{\langle W_Q h_i, W_K h_j\rangle}{\sqrt d} + b_{\mathrm{rel}(i,j)}\big(\phi(d_{ij}, Q_{ij})\big), \qquad d_{ij} = R_i^\top (o_j - o_i)/S, \quad Q_{ij} = R_i^\top R_j , $$
+with relations: same segment, adjacent segment, mirror partner, **same garment**, and other. The garment relation lets covered points share their $\tau$ and $R$.
+
+### 6.3 Heads over the same state
+
+Gaussian with low rank plus diagonal, $a = \mu + L\xi + D^{1/2}\epsilon$; a mixture of such; a diffusion or rectified-flow head over $a$. Same encoder, basis, splits and evaluation.
+
+## 7. Into the optimiser
+
+### 7.1 The prior, with three kinds of direction
+
+Split parameter space into: gauge directions (no change of shape; removed by 5.2); the learned subspace $\mathrm{span}(W)$, where the model supplies $\mu_a, \Sigma_a$; and the remainder, which the data never resolved. For the remainder neither "free" nor "forbidden" is right: it keeps the fit's existing stiffness terms, scaled as now. The model's term is
+$$ \Psi(z) = \psi\!\Big( \big\| \Sigma_a^{-1/2}\, (W^{+}(z - \bar z) - \mu_a) \big\| \Big), $$
+added to the existing objective, with $W^{+}$ the projection onto the basis in the $\|\cdot\|_{\mathcal A}$ geometry.
+
+### 7.2 The tail $\psi$
+
+Take one coordinate: $x$ the upper-jaw displacement in prior standard deviations, $k$ the displacement the surface terms prefer, $\lambda$ their precision relative to the prior. With $\psi(t) = t^2/2$ the solution is $x^\ast = \lambda k/(1+\lambda)$: a fixed fraction of what is asked is lost at every $k$. With a Huber $\psi$ of transition $c$, once $x^\ast > c$ the solution is $x^\ast = k - c/\lambda$: the prior pulls back by a bounded amount. A stylised character lives in that tail. $c$ is estimated on validation data. A fit that satisfies the hard rules and lands in the tail is *feasible and unusual*; its accuracy there is unknown and must be reported as such.
+
+### 7.3 Bounds and fixed points
+
+A learned quantity enters through the prior only. A calibrated bound $|\ell(z) - \mu_\ell| \le \kappa \sigma_\ell$ from the same model is added only where it improves the final fit on held-out CT, since it counts the model twice. Exact equality is for observed or artist-fixed points.
+
+### 7.4 The surface term
+
+The fit's surface data term is the likelihood of section 4.4, replacing the current tests against the observed surface.
+
+### 7.5 Several modes
+
+Fit each mode separately; compare fit cost plus log-probability.
+
+## 8. Training
+
+### 8.1 Targets are measurements
+
+For CT person $p$ the training target is not a fitted $z_p$ but what the scan shows: points on the skin surface; points on bone surfaces (bone is the highest-contrast tissue in CT and is found from intensity even where no per-bone label exists); labelled structure surfaces where labels exist; skin-to-bone depth along prescribed rays. A reference fit $z^0_p$ is used only as the point of linearisation.
+
+### 8.2 Likelihood in measurement space
+
+Let $y_p$ stack person $p$'s measurements. Around $z^0_p$,
+$$ y_p \approx y^0_p + H_p\,(a - a^0_p) + \varepsilon_p, \qquad \varepsilon_p \sim \mathcal N(0, R_p), $$
+with $H_p$ the sensitivity of the measurements to the coefficients (from $B(x)$ at the measured points) and $R_p$ the measurement covariance (repeat-extraction and label noise). For the Gaussian head,
+$$ y_p \mid \mathcal O_p, g_p \;\sim\; \mathcal N\!\big( y^0_p + H_p(\mu_a - a^0_p),\; H_p \Sigma_a H_p^\top + R_p \big). $$
+A scan that shows only part of the anatomy constrains only the combinations $H_p a$; a direction $u$ with $H_p u = 0$ for every scan is unidentifiable and stays with the atlas's stiffness. A table of which labels co-occur is a first audit; the null spaces of the $H_p$ are the real answer.
+
+### 8.3 Which loss for which purpose
+
+Squared geometric error for a point prediction (the mean); the likelihood of 8.2 or a proper sample score (energy score) for the distribution; the diffusion or flow objective on $a$ only where clean latent targets are well identified, otherwise on measurements through $H_p$. Never squared error between a random draw and the truth.
+
+### 8.4 Three kinds of "missing"
+
+No label for a structure (handled by 8.2); a ray that meets no bone (an observation, with a validity target); skin hidden by cover (an input condition, section 4).
+
+### 8.5 Supervision at several scales
+
+Points through the volume (inside or outside each structure); points on and near surfaces, both sides; critical planes, random oblique planes and named rays. Weights are inverse measurement variances.
+
+### 8.6 Conditions seen in training
+
+Random dropping of person facts; hidden bands of planes; simulated garments and hair (4.6); with and without observed interior slices.
+
+## 9. Experiments, in order
+
+**Test 0a: can the target be measured?** On reviewed scans, the skin point and the bone boundary on a prescribed ray (upper lip, chin, mid-shin, greater trochanter), repeated under perturbed landmarks and planes. The spread is $R_p$.
+
+**Test 0b: can the full fit recover it?** Fit the full deformation graph with the labels normally available; compare its depth with the independent measurement; repeat with the local bone boundary supplied. Improvement on supplying the boundary means missing evidence; persistent error means graph resolution, correspondence or the ray definition.
+
+**Test 0c: does compression lose it?** The same with the reduced basis. The difference is the cost of the basis.
+
+**Test 1: how much the exterior knows.** Fixed Gaussian head; inputs from local outline only, to all outlines, to oriented surface neighbourhoods, to the whole body, to known age. Held-out gain at each named site.
+
+**Test 2: paradigms**, with one frozen basis learned on training people:
+
+| Run | Interior | Training supervision |
 |---|---|---|
-| The state itself | $\| a - a_p \|^2_{\Lambda}$, or the head's likelihood | The distribution over anatomies. |
-| Points on and near labelled surfaces | distance from $D_z(x)$ to the labelled surface, both sides | Fine boundary position, including between critical planes. |
-| Points spread through the volume | inside/outside agreement of each structure | Overall placement and extent. |
-| Critical planes, random oblique planes, named depth rays | contour distance and depth error on the plane | The quantities the optimiser and the user consume; oblique planes expose errors the usual orientation hides. |
+| A | joint per-slice predictions (version 1) | critical-slice measurements |
+| B | shared state, slices cut from it | critical-slice measurements only |
+| C | as B | plus off-plane measurements |
 
-Because $D_z$ is linear in $z$ for the deformation graph, point and plane losses are quadratic in $z$ to first order, with matrices $B(x)$.
+All three are scored after the actual atlas fit, against independent CT measurements on unseen people, including oblique sections. Basis rank and loss weights are chosen on a separate validation set.
 
-### 7.3 Weights from data
+**Test 3: heads.** Gaussian, mixture, diffusion; energy score, coverage and width, error after the fit.
 
-Each query's weight is the inverse of its own measurement variance: repeat-extraction variance for planes (perturb landmarks, crops and the surface threshold within their measured repeatability), label noise per structure, and the area or length the query represents.
+**Test 4: clothing** (section 4.7).
 
-### 7.4 Three different kinds of "missing"
+**Test 5: the use.** The skull fit with the hand-written philtrum rule removed and the model's prior in its place.
 
-- *No label for this structure in this scan* (annotation missing): excluded from the likelihood by marginalising, i.e. the likelihood of the observed block only, with covariance $\Sigma_{OO}$.
-- *The ray meets no bone* (anatomical absence): an observation in its own right, with a validity flag as a target.
-- *Skin hidden by cloth or hair* (cover): an input condition, not a missing target.
+**Test 6: stylisation.** Paired smooth warps of CT skin and bone; then the real figure, judged by its distance into the prior's tail and by the hard rules.
 
-Before choosing joint targets, tabulate which structures are ever labelled together. Correlations between structures that never share a scan cannot be learned from the data and come only from the atlas.
+**Confounding.** Known, withheld and within-source-shuffled age.
 
-### 7.5 Cover
+## 10. Data: what exists, and the order it forces
 
-Hair and clothing are simulated as connected 3D regions over the CT skin (a garment or a hair mass covering a patch across several planes), producing a covering surface outside the skin and a covered flag. Two variants are compared: the model sees only the flag, or it also sees the covering geometry. The test set uses real character hair and clothing masks.
+Reported by the data session; not re-checked by me.
 
-### 7.6 Training conditions
+| Source | People | Full faces | Access |
+|---|---|---|---|
+| TotalSegmentator CT (held, private) | 1,228 | 38 (110 at most) | open, CC BY 4.0 |
+| HaN-Seg | 42 | 42 | open, non-commercial, no derivatives |
+| PDDCA-Lite | 48 | 48 | open copy exists; terms to be confirmed |
+| Head-and-neck cancer collections | about 4,000 | intact | controlled access, institutional application |
+| A decedent CT database | about 15,000 | intact | institutional agreement; no redistribution or derivative works |
 
-Random dropping of $g$ entries; random hiding of contiguous bands of planes; with and without observed interior slices (5.4), evaluated separately.
+Regions well covered now: chest about 580, pelvis about 580, legs 148 (from scan-type metadata; an exact census is being run). Labels: every bone separately except forearm, hand, shin and foot; about ten named muscles; no skin label (threshold); fat only through a separately licensed model.
 
-## 8. Experiments, in order
+Consequences:
 
-**Test 0, before any training: oracle representation error.** Fit the basis directly to held-out CT labels (the answer supplied) and measure the residual at the upper lip, the jaw and the skull base. If the best case already misses, a better predictor cannot help; add local freedom to the basis first.
+1. **Body first.** The method (surface-only planes, shared state, measurement likelihood, clothing, the link to the optimiser) is tested on trunk, pelvis and thigh, where hundreds of people exist.
+2. **The face model is small.** With 130 to 200 faces a low-rank statistical model is the realistic choice; a published estimate quoted to us is 1.5 to 4 mm error at this scale, with learned models ahead of a linear one by about 0.1 mm at 81 scans (unverified). The existing tissue-depth table of 388 people is a check, not training data.
+3. **Supine bodies.** CT subjects lie on a table with arms raised or at the sides; soft tissue of the trunk and breasts sits differently from a standing character. This is a domain gap in the skin, not in bone (open: 12.10).
+4. **Privacy.** A skin surface rendered from head CT is a recognisable face. Scans stay in private storage, no face is rendered, nothing leaves that storage. Whether such data fits the user's consent rule is the user's decision and is not assumed here.
 
-**Test 1: how much the exterior knows.** With the head fixed (Gaussian), compare inputs: local outline only; all outlines; all outlines plus oriented surface neighbourhoods; whole head; plus known age. Report the held-out gain at each named site. There is no defensible numerical ceiling from published whole-skull results; the irreducible error of a depth $Y$ is $\mathbb E[\mathrm{Var}(Y \mid \mathcal S, g)]$, and this ladder measures how close each input gets.
+## 11. Disagreements and open positions
 
-**Test 2: three training paradigms**, same held-out people, same inputs, comparable compute:
+**11.1 Where the shared anatomy lives.** *Review:* the optimiser's deformation graph is a good interface if the full-graph oracle succeeds. *Agreed*, conditional on Test 0b. If it fails with the local boundary supplied, the graph (node placement, weights) is the next thing to fix, before any learning.
 
-| Run | Interior representation | Supervision |
-|---|---|---|
-| A (version 1) | joint per-slice predictions | critical slices |
-| B | one shared state $z$, slices cut from it | the same critical slices |
-| C | as B | critical slices plus off-plane points and surfaces |
+**11.2 A non-human figure.** *Review:* heavier tails let the fit leave the human prior. *Mine:* her differences from people are systematic (small jaw, flat nose root, long legs, large head), the same across a style. A low-dimensional *stylisation map* $\sigma$ estimated from the surface (a smooth warp taking a stylised surface to its nearest human-proportioned one), with the human prior applied to the de-stylised body and the interior carried back through $\sigma$, may fit better than tails alone: $p(z \mid \mathcal O) = p_{\text{human}}(\sigma^{-1} z \mid \sigma^{-1}\mathcal O)$. Open: whether the interior should follow the surface warp affinely (bone stretches with the face) or only partly (a larger head on a normal skull thickness). Neither position has been worked through.
 
-A to B measures the value of a shared anatomy; B to C the value of the CT between the slices.
+**11.3 Gaussian or diffusion.** *Review:* Gaussian first. *User:* prefers diffusion. With hundreds of people and a few dozen coefficients they may be indistinguishable; build both (Test 3).
 
-**Test 3: heads.** Gaussian, mixture, diffusion or flow over the same $a$; scored by a joint sample score (energy score), interval coverage and width, and error after the actual atlas fit.
+**11.4 Fixed points.** *User:* confident slices fix the optimiser. *Review:* equality only for observed or artist-fixed points; a bound from the model counts it twice. *Mine:* the hand-written philtrum rule was needed because other terms of the fit pulled the wrong way (line targets using the atlas's own depths), not because the prior was weak. The lesson may be to replace those terms by the model's prior rather than to add firm rules. To settle: rerun the skull fit with the conflicting terms removed and a prior of the right strength, and see whether any firm rule is still needed.
 
-**Test 4: the use.** Run the skull fit with the hand-written philtrum rule removed and the model's prior in its place. The acceptance test is the bone depth under the upper lip after the fit, with the jaw and skull base no worse.
+**11.5 Slices or volume.** Slices remain inputs, readouts and supervision; the predicted object is 3D. Run A keeps the per-slice design under test.
 
-**Test 5: stylisation.** Smooth paired warps of CT skin and bone together (so the truth is known), planes re-extracted afterwards; report how error and overconfidence grow with the warp. Then the real figure, where there is no truth, judged by the Mahalanobis distance of the fitted $z$ from the prior and by the hard rules.
+**11.6 How much to trust cloth.** New. The observation model of section 4 treats tight cloth on convex regions as nearly as good as skin. That rests on the user's arrangement holding and on $\tau_{\text{fabric}}$ being measurable at edges. If a garment has no visible edge on bare skin (a full bodysuit), $\tau$ has no measurement and must come from a prior over garments. How informative is such cloth then?
 
-**Checks on confounding.** Known age, withheld age, and age shuffled within scan source; results by age range and by source.
+## 12. Research questions for the next round
 
-## 9. Disagreements and open positions for the next rounds
+**12.1 Clothing as inequalities.** With the skin part of the state and cloth giving $\delta \ge 0$, characterise the posterior over the skin under a garment: where is it determined by the edges and the prior, and where does it remain wide? Give the convex $\phi$ of 4.4 explicitly as a function of $\tau_{\text{fabric}}$ and the bridging indicator, and show the fit stays convex.
 
-Each item states the review's position, mine, and what would settle it.
+**12.2 Estimating $R$ and $\tau$ from the cloth alone.** Prove or refute: the maximal concave curvature of a tensioned cloth surface bounds $1/R$; the step at a garment edge estimates $\tau$ without bias in the presence of a rolled hem. Propose estimators and their variances.
 
-**9.1 Where the shared anatomy lives.** *Review:* a statistical shape basis of skull and mandible, or an implicit field per structure; cut slices from it. *Mine:* use the optimiser's own deformation parameters, so the prediction is a prior in the variables being solved for and needs no conversion, linearisation or second fit. *Risk in mine:* $z$ is gauge-redundant and was designed for optimisation, not for statistics; its principal directions may be dominated by parametrisation artefacts. *To settle:* the canonical form of $z$ (10.2), and Test 0 run for both representations.
+**12.3 The size $S_p$.** A surface-only size stable on partial CT, whole CT and a stylised figure.
 
-**9.2 Human shape models and a non-human figure.** *Review:* sample one plausible anatomy from a basis learned on people; measure the basis's error on held-out people; stress-test with warps. *Mine:* the figure needed a 17% stretch of the upper jaw to follow her face, where human skull proportions vary by about 3.5%. A draw from a human basis is therefore wrong for her by construction, however good the basis is on people. The prediction must be a prior with honest tails that the optimiser can leave where the surface insists, and the mathematics of leaving it must be worked out: a Gaussian prior penalises a 5-sigma deviation as $25$, which the data terms may or may not overcome. *To settle:* the right tail (Gaussian, Student-t, Huber on the Mahalanobis distance, or a learned out-of-distribution score that inflates $\Sigma$), and whether the model can be made to *know* it is extrapolating (10.5).
+**12.4 Bridging and identifiability.** In a spanned hollow the cloth is flat while the skin is concave by an unknown depth. Which other observations (the mirror side, the edges, the interior prior) identify that depth, and with what variance?
 
-**9.3 The cost that the review did not count.** Its plan needs the maxilla and mandible as 3D labels in every scan. As reported so far (unverified), the available CT set labels the skull coarsely and individual face bones not at all. So the targets $z_p$ require fitting our atlas into every scan from coarse labels plus intensity, which is the larger part of the work and has its own error. *To settle:* an estimate of that fit's accuracy at the upper jaw from coarse skull labels (can it resolve what we want to learn?), and whether a subset with fine labels is needed.
+**12.5 Measurement-space training.** For the Gaussian and the diffusion head, write the objective of 8.2 exactly, including the linearisation point's effect, and state which directions of $a$ are identifiable from the scan types we hold.
 
-**9.4 Gaussian first, or diffusion.** *Review:* start Gaussian; promote diffusion only if it wins. *User:* prefers a transformer-diffusion model. *Mine:* with 100 to 300 heads a Gaussian over a few dozen coefficients is likely to match diffusion, but this is a guess; the question is empirical and cheap, since the head is a small part of the network. Build both from the start (Test 3) rather than argue. *To settle:* an analysis of when diffusion over a low-dimensional, strongly conditioned state can beat a Gaussian at this sample size, and what the test should be.
+**12.6 The stylisation map.** Define $\sigma$ (11.2) so that it is identifiable from the surface, low-dimensional, and composes with the mirror and with pose. How should bone follow it?
 
-**9.5 Fixed points.** *User:* the model fixes important critical slices and those guide the optimiser. *Review:* equality only for observed or artist-fixed points. *Mine:* a hand-written firm rule is what finally fixed the philtrum, so firm constraints have a real role; but an equality from an uncalibrated model is dangerous. *To settle:* a rule, derived from calibration data, for when a bound may harden (for example, when the bound's width falls below the optimiser's own resolution), and whether hard and soft forms differ in outcome once the covariance is right.
+**12.7 Tails.** Extend 7.2 from one coordinate to the full problem: with a Huber penalty on the Mahalanobis norm, which combinations of coordinates enter the tail together, and is a per-direction tail better?
 
-**9.6 Slices or volume.** *User:* 2D models on important slices are enough to guide the optimiser. *Review:* train on the 3D anatomy, keep slices as queries. *This version:* slices stay as inputs, readouts and supervision; the predicted object is 3D. Run A is kept so that the user's original design is tested, not dropped.
+**12.8 Deformation-graph reach.** What local shape variation can a graph with nodes placed by bone size not express; where must nodes be added?
 
-**9.7 An autoregressive, pose-conditioned generator in the style of the reference world model.** The review says the transferable idea is a shared, spatially grounded context and that next-slice prediction is a weak fit. I agree with the argument but have not read the reference model's architecture (section 11). *To settle:* a primary-source account of that architecture and a direct statement of which mechanisms apply here.
+**12.9 Compression under tight cloth.** A model for how fat depth changes under an elastic edge, and whether it matters for the fit.
 
-## 10. Research questions for the next round
+**12.10 Supine to standing.** How should skin and fat measured on a supine body be mapped to a standing one, or should the model be conditioned on posture instead?
 
-**10.1 Test 0 on paper.** For a deformation graph with $M$ nodes, what local shape variation can it not express (a bound in terms of node spacing and the weight functions $w_j$)? Is the upper jaw's alveolar process within reach with nodes placed by bone size, or must nodes be placed where the data ask?
+**12.11 Attention symmetry.** $\phi(d_{ij}, Q_{ij})$ exactly equivariant to rigid motion and mirror.
 
-**10.2 Canonical form of $z$.** Define a gauge fixing for the deformation graph (and for the jointed bones) under which equal shapes have equal $z$, the mirror action is linear, and principal components are meaningful. Is it better to do statistics on $B z$ (vertex displacements) and map back by a pseudo-inverse?
+**12.12 Diffusion at this scale.** Schedule, parametrisation and sample complexity for a few dozen coefficients and a few hundred people.
 
-**10.3 The size $S_p$.** Which surface-only size is stable on head-only CT, whole-body CT and a stylised figure with non-human proportions (for the head: a robust distance between surface landmarks, the cube root of the head's volume)? How does the choice bias depth proportions on a figure with a large head?
+**12.13 Verification.** Primary-source accounts of the cited works (section 13).
 
-**10.4 Tails and leaving the prior.** Derive the optimiser's solution as a function of the prior's tail for a single conflicting constraint (the philtrum case: a surface that demands a displacement $k$ spreads from the mean). Which convex penalties keep the problem convex and let the data win at large $k$? What is the correct term when the model itself reports extrapolation?
+## 13. Not verified
 
-**10.5 Knowing when it extrapolates.** Give a principled out-of-distribution measure on the inputs (surface proportions outside the training hull) and a way to turn it into inflated uncertainty, with a test on warped CT.
+- The reference world model's architecture (reported: a multimodal autoregressive transformer with explicit camera poses, a shared 3D spatial context and rectified flow). I have not read it.
+- The works cited in the reviews: surface-to-CT torso generation conditioned on demographics; head-to-skull regression with mean skull-shape errors of 1.67 to 3.99 mm on 209 subjects; relative-transform attention for multi-view reconstruction; CT generation conditioned on segmentations; a patch-and-volume medical diffusion model; continuous signed-distance shape representations.
+- The data census figures of section 10 and the error estimates quoted there.
+- That keypoint detection works on a surface rendered from CT; that minimal-area planes are stable on clinical CT; that gowns and blankets can be removed from CT as separate sheets.
+- That garment edges on generated characters are clean enough to measure $\tau_{\text{fabric}}$.
 
-**10.6 Marginal likelihood with structured missingness.** Write the training objective for the Gaussian and for the diffusion head when each scan labels a different subset of structures, and state exactly which cross-structure correlations are identifiable from a given co-occurrence table.
+**Constraints on any proposal:** no hand-set decision numbers; proportions, not millimetres; a pilot must fit a budget of a few dollars; CT of real people stays private.
 
-**10.7 Losses in geometry.** Using linearity $D_z(x) = x + B(x) z$, derive the quadratic forms of the point, surface and plane losses in $z$ and in $a$, their natural weights, and the relation between the energy score on $a$ and on readouts.
+## 14. What to send back
 
-**10.8 Relative geometry in attention.** Specify $\phi(d_{ij}, Q_{ij})$ so that the network is exactly equivariant to a global rigid motion and to the mirror, and say whether invariance to a plane's roll should be exact or only encouraged.
-
-**10.9 Diffusion at this scale.** For $r$ of a few dozen and $N$ of a few hundred, what noise schedule, parametrisation and regularisation make a diffusion head competitive with a Gaussian, and what does the theory of score estimation say about sample complexity here?
-
-**10.10 Plane stability.** How sensitive are minimal-area planes to landmark and surface noise, analytically, for a near-cylindrical limb and for the face; and how does plane jitter propagate into depth targets at the philtrum?
-
-**10.11 Verification.** Establish from primary sources what the cited works actually show (section 11), and correct this handout where they do not support what is attributed to them.
-
-## 11. Not verified
-
-- The architecture of the reference world model (reported as World Labs' Atlas: a multimodal autoregressive transformer with explicit camera poses, a shared 3D spatial context and rectified flow). I have not read it.
-- The works the review cited and the figures attributed to them: surface-to-CT torso generation conditioned on demographics; head-to-skull regression with mean skull-shape errors of 1.67 to 3.99 mm on 209 subjects; relative-transform attention for multi-view reconstruction; CT generation conditioned on segmentations; a patch-and-volume medical diffusion model; continuous signed-distance shape representations. None of these has been checked by me.
-- The exact labels in the CT download (a job is fetching it).
-- That keypoint detection works on skin rendered from CT, which section 3.1 depends on.
-- That minimal-area planes are stable on clinical CT (arms raised, cropped fields of view, tables and blankets).
-
-**Constraints on any proposal:** no hand-set decision numbers (thresholds from data, a statistical model or the optimisation); proportions, not millimetres; a head-only pilot must fit a budget of a few dollars of GPU time; CT of real people is stored privately and no scan or rendering of one leaves that storage.
-
-## 12. What to send back
-
-1. A canonical form for $z$ and the basis construction (10.1, 10.2), with Test 0's expected outcome.
-2. The tail and out-of-distribution treatment that lets the optimiser leave a human prior (10.4, 10.5), worked through for the philtrum case.
-3. The training objective under structured missing labels (10.6) and the geometric losses (10.7).
-4. The attention specification with its symmetries (10.8).
-5. A reasoned position on Gaussian against diffusion at this scale (10.9), stated as what the experiment should show for each to be chosen.
-6. A position on each disagreement in section 9, with the argument, including where this version is wrong.
-7. Verified accounts of the cited works (10.11).
+1. The clothing mathematics: $\phi$, the estimators of $\tau$ and $R$, and the identifiability of skin in bridged regions (12.1, 12.2, 12.4).
+2. The measurement-space objective for both heads (12.5).
+3. A worked proposal, or a refutation, of the stylisation map (12.6), and the multi-coordinate tail (12.7).
+4. Expected outcomes of Tests 0a to 0c, and what each would force us to change.
+5. A position on each item of section 11.
+6. Verified accounts of the cited works.
