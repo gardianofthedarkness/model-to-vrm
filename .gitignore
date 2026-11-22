@@ -21,3 +21,11 @@ cards/
 /repro_seg.py
 /__tracked_surface.stl
 *.stl
+
+# internal working notes, kept local (they name the excluded real-person test model)
+docs/devlog.md
+docs/handoff-skeleton-math.md
+docs/handover.md
+docs/milestones.md
+docs/plan-flesh-volume.md
+docs/plan-separate-unpose.md
