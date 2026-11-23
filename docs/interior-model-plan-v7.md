@@ -379,3 +379,36 @@ The voxels GRACE calls bone have a median CT value of 320–510 HU, below the 59
 - **D1 (taken):** non-commercial academic project; licensed TotalSegmentator tasks and GRACE allowed; models trained on them are research models.
 - **D2 (open):** may post-mortem CT of deceased people (VSD sets, Visible Human; possibly NMDID after its terms are clarified) be used for limbs?
 - **D3 (open):** MRI heads via GRACE labels, if H3b shows agreement with CT.
+
+
+## 13. Milestones, renamed (2026-11-23)
+
+One word and one rising number each, in the order they are done. From here on only these names are used; the old labels are listed once for reference.
+
+| # | Name | What it is | Old label | Status |
+|---|---|---|---|---|
+| 1 | Measure | Skin, fat, fascia and bone measured on CT rays | T0a | done |
+| 2 | Atlas | Atlas placed into 409 pelvis CTs by their bones | T0b | done |
+| 3 | Export | Volume and mesh saved, reopened, lined up | step 1, round trip | done |
+| 4 | Gaussian | Gaussians as the 3D object | step 4a, 4b | done, dropped |
+| 5 | Autoencoder | Frozen MAISI autoencoder holds the anatomy | E1 | done |
+| 6 | Brightness | Surface to brightness code; bones blurred | stage A | done, target dropped |
+| 7 | Encode | All 1,226 scans encoded and saved once | — | done |
+| 8 | Density | How much brightness is tissue type, how much is the person | density and variance checks | done |
+| 9 | Labels | Tissue-label volumes for every scan; licensed fat and muscle labels for the pelvises | labels v1, tissue v1, W1, W2 | done |
+| 10 | Classifier | Surface to labels on the pelvis beats the baselines | A2, W3 | done, passed |
+| 11 | Head | Head data census; MRI labels checked against CT | H1, H3, H3b, W6 | done; head is CT-first |
+| 12 | Tissue | Classifier repeated on the licensed fat and muscle labels | W4 | next |
+| 13 | Compress | Label autoencoder: are thin structures kept at 12 mm tokens | A3, W5 | next |
+| 14 | Baseline | Surface-fitted atlas baseline; window set from the surface alone | three-run benchmark | to do |
+| 15 | Architecture | 3D tokens against slices, tri-plane, shape model, implicit field, at equal cost | section 5.5, W11 | to do |
+| 16 | Transformer | Masked bidirectional model per person, surface only, pelvis | T1, W10 | to do; the decisive test |
+| 17 | Context | Does more surface, or one revealed region, help | T2, E3 | to do |
+| 18 | Trunk | One model over chest, abdomen and pelvis | T3 | to do |
+| 19 | Seams | Regions agree where they meet; long bones stay continuous | T4 | to do |
+| 20 | Diffusion | Generative head: sharp, varied, calibrated bodies | D, step 5 | to do |
+| 21 | Rig | Fixed-topology meshes fitted into generated labels; layers; skeleton binding | T5, step 7 | to do |
+| 22 | Skull | Head in the shared model (CT heads, expert face labels) | H4, W7 | to do |
+| 23 | Limbs | Forearms, hands, shins, feet: data decision, then training | T6, W8, decision D2 | waiting for a decision |
+| 24 | Character | Stylised standing characters, swimsuit base | T7, step 6 | to do |
+| 25 | Edit | Local edits: thicker thighs, bigger eyes, match a portrait | step 8 | later |
