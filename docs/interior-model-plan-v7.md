@@ -260,6 +260,21 @@ TotalSegmentator `tissue_4_types` on all 409 whole-pelvis adults, none failed; 1
 
 A ring of nearly incompressible soft tissue round a fixed bone, energy-form PINN. Garment pressure against the exact Lamé solution: mean error 6% of the peak displacement, worst 12%, 223 s per solve. Gravity (lying to standing): two network sizes agree to 3% on average, 9% at worst. It works without a mesh, but a finite-element solver is the faster, more exact tool for single solves. A PINN is worth revisiting at the rig stage as one network over pose and body shape, or to fit unknown stiffness.
 
+### 9.9 Milestones 12 Tissue, 13 Compress, 14 Baseline (2026-11-23)
+
+**12 Tissue** (classifier on the licensed fat and muscle labels; true window; A100, 41 min, about $1.70). Medians over 42 test people, model / nearest body / surface-fitted atlas: subcutaneous fat Dice 0.84 / 0.69 / 0.72; **fascia depth error 4.9 / 6.7 / 8.4 mm**; fat thickness error 4.9 / 6.8 / 8.7 mm; bone surface 5.4 / 6.2 / 7.5 mm; hip bone Dice 0.64 / 0.48 / 0.46; femoral head 10.5–11.4 / 14.3–15.0 / 17.8–19.2 mm. The model beats the nearest body in 29–35 of 42 people and the atlas in 35–37. Cleaner labels improved bones too (5.8 to 5.4 mm). **Decision: the licensed tissue labels are the default target.**
+
+**14 Baseline** (window predicted from the outline; labels v1; A100, 31 min, about $1.30). Window error, bottom / top edge: median 8 / 24 mm, 90th percentile 16 / 75 mm. Every method loses accuracy: bone surface 8.2 (model) / 8.1 (nearest) / 9.1 mm (atlas); femoral head about 18–23 mm for all. The model still wins on structure (Dice better in 30–35 of 42). The simple surface-fitted atlas (each slice stretched to the outline) is the weakest baseline; nearest body remains the bar. **Finding: body position along the length is now the main error.** Options: a generous window with a margin; the window from the character's fitted hip joints (estimated from the surface for CT training); no window at all in milestone 16.
+
+**13 Compress** (label autoencoder on all 1,080 training scans, scored on 89 test scans, labels v1 at 3 mm; A100, 128 min, about $5.30, over the $3.30 estimate because full-scale scoring was slow):
+
+| Token size | Tokens for a 75-litre body | Median Dice (122 classes) | Big bones | Gluteal muscles | Ribs | Vertebrae | Vessels | Subcutaneous fat | Fat thickness error |
+|---|---|---|---|---|---|---|---|---|---|
+| **12 mm** | 43,400 | **0.84** | 0.95 | 0.96 | 0.76 | 0.83 | 0.80 | 0.91 | **0.56 mm** |
+| 24 mm | 5,400 | 0.69 | 0.88 | 0.91 | 0.47 | 0.70 | 0.56 | 0.79 | 1.54 mm |
+
+At 12 mm, structures thicker than 12 mm keep Dice 0.97; those 6–12 mm thick keep 0.82. The worst classes are the brightness-defined ones (other fat 0.38, dense 0.42, gas 0.47) and small organs (adrenals, carotids about 0.6). Both runs were still improving at the last step, so these are lower bounds. **Decision: 12 mm tokens keep the anatomy the rig needs; a plain transformer at about 43,000 tokens per whole body is viable (section 5.5 cost table), and Mamba is not needed.**
+
 ## 9b. The head
 
 The face is where characters are judged, and the rig needs the jaw, the eyes and the thin facial soft tissue. The head therefore gets its own data plan.
@@ -398,9 +413,9 @@ One word and one rising number each, in the order they are done. From here on on
 | 9 | Labels | Tissue-label volumes for every scan; licensed fat and muscle labels for the pelvises | labels v1, tissue v1, W1, W2 | done |
 | 10 | Classifier | Surface to labels on the pelvis beats the baselines | A2, W3 | done, passed |
 | 11 | Head | Head data census; MRI labels checked against CT | H1, H3, H3b, W6 | done; head is CT-first |
-| 12 | Tissue | Classifier repeated on the licensed fat and muscle labels | W4 | next |
-| 13 | Compress | Label autoencoder: are thin structures kept at 12 mm tokens | A3, W5 | next |
-| 14 | Baseline | Surface-fitted atlas baseline; window set from the surface alone | three-run benchmark | to do |
+| 12 | Tissue | Classifier repeated on the licensed fat and muscle labels | W4 | done (9.9): licensed labels become the default |
+| 13 | Compress | Label autoencoder: are thin structures kept at 12 mm tokens | A3, W5 | done (9.9): yes at 12 mm; plain transformer viable |
+| 14 | Baseline | Surface-fitted atlas baseline; window set from the surface alone | three-run benchmark | done (9.9): body position is now the main error |
 | 15 | Architecture | 3D tokens against slices, tri-plane, shape model, implicit field, at equal cost | section 5.5, W11 | to do |
 | 16 | Transformer | Masked bidirectional model per person, surface only, pelvis | T1, W10 | to do; the decisive test |
 | 17 | Context | Does more surface, or one revealed region, help | T2, E3 | to do |
