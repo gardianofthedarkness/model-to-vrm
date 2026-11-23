@@ -1,6 +1,6 @@
 # Interior model: design v7 (tissue-label target)
 
-**Status, 2026-11-23.** This is a full rewrite. It replaces the learned part of v6.x ([interior-model-plan-v6.md](interior-model-plan-v6.md)), which stays as the record of the Gaussian and intensity-code experiments. The mechanics, clothing and rig sections of v5.1 ([interior-model-handout.md](interior-model-handout.md)) still apply where cited. Nothing here has been trained beyond the tests in section 9.
+**Status, 2026-11-23 (revision b: label sources, licences, limb data, parallel workstreams; see sections 3.1, 4.1, 12).** This is a full rewrite. It replaces the learned part of v6.x ([interior-model-plan-v6.md](interior-model-plan-v6.md)), which stays as the record of the Gaussian and intensity-code experiments. The mechanics, clothing and rig sections of v5.1 ([interior-model-handout.md](interior-model-handout.md)) still apply where cited. Nothing here has been trained beyond the tests in section 9.
 
 **What changed and why.** The model's main target is no longer CT brightness. It is **which tissue occupies each point**: a label volume of bone, muscle, fat, organs and named structures. Brightness within one tissue turned out to be a small and largely unpredictable detail (section 9.4). Predicting it voxel by voxel made a deterministic model blur everything (section 9.3). A classifier that is unsure still puts each boundary at its most likely place, so the generated anatomy stays sharp, and the layers the rig needs (bone, muscle, fascia, fat, skin) are read straight off the labels.
 
@@ -49,6 +49,19 @@ The **fascia** is then the boundary between the subcutaneous-fat class and the f
 
 **Existing solution.** NVIDIA's MAISI includes an anatomy-mask autoencoder and a mask-generation diffusion model over 132 classes: the body, all vertebrae and ribs, hip bones, sacrum, femurs, humeri, scapulae, and gluteal, iliopsoas and back muscles. It has no fat class and no forearm or lower-leg bones, and its weights are research-only. It is a candidate starting point for section 5.2, to be tested against our own small model.
 
+### 3.1 Label sources, in versions
+
+| Version | Source | Covers | Status |
+|---|---|---|---|
+| labels v1 | TotalSegmentator's 117 structure masks; brightness (3×3×3 median) for the rest: subcutaneous fat = fat connected to the outside through fat only; other fat; other lean; gas; dense unlabelled | all 1,226 adult CTs, on the crop and grid of the saved codes | running (4 CPU jobs, about $0.05) |
+| tissue v1 | TotalSegmentator's licensed `tissue_4_types` model: subcutaneous fat, torso fat, skeletal muscle, intermuscular fat | the 409 whole-pelvis adults first | smoke running on an L4 card |
+| head MRI | GRACE (11 head tissues from T1 MRI: skin, fat, muscle, spongy and cortical bone, air, eyes, brain, CSF, vessels) | IXI and HaN-Seg MRIs | H3b running: checked against the same person's CT |
+| licensed extras | TotalSegmentator `appendicular_bones`, `thigh_shoulder_muscles`, head tasks | limbs and head, where scans reach | not started |
+
+A2 runs on labels v1 and is then repeated on tissue v1, which also measures how much the label source matters.
+
+**Licences of labels (decided 2026-11-23: non-commercial academic project).** TotalSegmentator's licensed tasks (academic key in the user's vault) and GRACE's weights (non-commercial research only; no derivative models for deployment) make every model trained on their labels a **research model**. A commercial product later needs its own labelling. TotalSegmentator's open structures and our brightness classes carry no such restriction.
+
 ## 4. Data
 
 **TotalSegmentator CT v2.0.1:** 1,228 research CT scans (1,226 adults), CC BY 4.0, official split train 1,080 / validation 57 / test 89. Held in a private Hugging Face repo.
@@ -66,6 +79,21 @@ Body coverage in adults (structure whole in the scan):
 No scan is a whole body. Head to mid-thigh is covered by overlapping regional scans. Arms, thighs and the skull are thin. Below the elbow and the knee there is nothing (section 10.1).
 
 **Already prepared** (`codes_v1/` in the private repo, all 1,226 adults): per scan the body mask, the outside-surface distance on a 6 mm grid, body-frame numbers measured from the surface, bone landmarks (for scoring only, including femoral-head centres), age, sex, split, and MAISI brightness codes (kept for the optional texture term). **To prepare next:** the grouped label volumes of section 3 at 1.5 mm and 3 mm, with a CPU job (cents).
+
+### 4.1 Limb and whole-body data (desk research, 2026-11-23; not downloaded)
+
+| Dataset | Coverage | People | Labels | Licence and access | Notes |
+|---|---|---|---|---|---|
+| VSDFullBody (Zenodo) | whole-body post-mortem CT (arm coverage unverified) | about 109 entries (true count unverified) | none | CC BY-NC-SA 3.0 CH, open, 116 GB | **deceased** (forensic institutes) |
+| VSDFullBodyBoneReconstruction | lower body incl. shin and foot bones | about 20 adults | bone masks and meshes | CC BY-NC-SA 4.0, open | deceased |
+| BoneHub vsd-feet-seg | feet and ankles | 30 CTs | 56 bones | CC BY-NC-SA 4.0 | deceased |
+| NMDID | head-to-toe CT, 1 mm | 15,249 | none | data use agreement **bans derivative works**; institutional application; over 50 TB | deceased, no consent; 1,171 under 18 |
+| Visible Human male and female | CT, MRI and cryosection, head to toe | 2 | third-party bone masks | NLM terms | deceased donors; reference only |
+| SAROS | 299 whole-body CTs (mostly cut at the upper legs) of 900 | 900 | every 5th slice: fat, muscle, bone; body parts | labels CC BY 4.0; source scans mixed | |
+| CADS | head to knee | 22,022 | 167 structures | mixed licences; gated; 1.9 TB | |
+| autoPET | mostly skull base to mid-thigh | 900 | lesions only | CC BY 4.0 | cancer patients |
+
+**Reading.** No open whole-body MRI with fat and muscle labels was found. The only open sources for shins, feet, forearms and hands are post-mortem CT (VSD sets) and two Visible Human bodies; NMDID has the scale but bans derivative works, and its terms must be clarified in writing before any use. **Deceased subjects are a new consent category** for this project and need the user's decision (section 12, decision D2). Licensed `appendicular_bones` can label limb bones in any of these scans.
 
 **Privacy and licences.** The CT data stay in private storage, and only aggregate numbers and the odd illustrative slice (CC BY, attributed) are shown. MAISI weights are research-only, so a product needs our own networks, trained on training people only.
 
@@ -237,7 +265,7 @@ Each person's T1 MRI was rigidly registered to their CT (mutual information, two
 
 ## 10. Open problems
 
-1. **Limb and head data.** Nothing below the elbow or knee; few arms, thighs and skulls. Candidates, unverified: autoPET whole-body PET/CT (roughly skull to mid-thigh), the New Mexico Decedent Image Database (head-to-toe CT by application; scans of deceased people, which must fit the consent rules). Until then the atlas fills these parts.
+1. **Limb and head data.** Nothing below the elbow or knee in the main set; few arms, thighs and skulls. Section 4.1 lists the candidates; all open limb sources are post-mortem CT (decision D2). Until then the atlas fills these parts.
 2. **Licences.** MAISI weights are research-only. The product path needs our own label autoencoder and generator.
 3. **Domain gap.** CT people lie supine and are real; characters stand and are stylised. Posture (v5.1 T7) and stylisation policy (v5.1 13.2) remain open.
 4. **The muscle–fat split** is not visible from outside. The model can only learn it from the population and the description (9.4). It is reported with its uncertainty.
@@ -245,8 +273,33 @@ Each person's T1 MRI was rigidly registered to their CT (mutual information, two
 
 ## 11. Questions for review
 
+0. (Revision b) Labels from licensed or research-only segmenters (TotalSegmentator tissue tasks, GRACE) as training targets: how should label noise from a model, rather than from experts, be handled in the loss and in scoring?
+
 1. Direct 3 mm label prediction or a label autoencoder for a whole body: which keeps cortex and fascia at a token count a transformer can handle?
 2. Masked-token generation with a per-token diffusion head over discrete labels: diffusion on label codes, or discrete masked generation (one class per voxel, iterative unmasking)?
 3. How should the body-frame position be defined from the outline alone, so that it transfers from supine CT to standing characters?
 4. Are 1,080 regional scans enough for a whole-trunk model, given T2's answer?
 5. Template fitting into generated labels against generating shells directly: when would the second be worth building?
+
+
+## 12. Workstreams: what blocks what, and what runs in parallel (2026-11-23)
+
+| Workstream | Depends on | Status | Cost so far / next |
+|---|---|---|---|
+| W1 Labels v1, all CT (brightness + structures) | codes_v1 crops | running, 4 CPU jobs | about $0.05 |
+| W2 Licensed tissue labels, 409 pelvises | licence key | smoke running (L4) | next: card choice from the smoke's seconds per scan |
+| W3 **A2**: surface to labels, pelvis, deterministic | W1 | blocked on W1 only | about $2–4 (smoke, then the card picked by the cost table) |
+| W4 A2 on tissue labels (label-source comparison) | W2, W3 | after both | small |
+| W5 **A3**: label autoencoder capacity (MAISI mask autoencoder against our own) | W1 | can start as soon as W1 lands, parallel to W3 | small GPU |
+| W6 Head: H3b GRACE against CT, 42 people | none | running (L4, about $0.70) | |
+| W7 Head CT labels: HaN-Seg's 42 CTs (expert face labels) plus TotalSegmentator's 110 skulls, with licensed head tasks | licence key | not blocked | CPU plus small GPU |
+| W8 Limb data | decision D2 | desk research done (4.1) | none until D2 |
+| W9 Review of this plan and the training-target proposal | none | with the user | — |
+| W10 Masked transformer T1 | W3 passing | after A2 | GPU hours |
+
+**Not blocked and worth running in parallel now:** W5 (once W1 lands), W7, and the review W9. **Blocked:** W3 and W5 on W1 (about 25 minutes), W4 on W2, W8 on decision D2, W10 on A2.
+
+**Decisions waiting for the user:**
+- **D1 (taken):** non-commercial academic project; licensed TotalSegmentator tasks and GRACE allowed; models trained on them are research models.
+- **D2 (open):** may post-mortem CT of deceased people (VSD sets, Visible Human; possibly NMDID after its terms are clarified) be used for limbs?
+- **D3 (open):** MRI heads via GRACE labels, if H3b shows agreement with CT.
