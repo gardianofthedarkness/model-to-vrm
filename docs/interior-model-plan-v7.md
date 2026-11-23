@@ -1,6 +1,6 @@
 # Interior model: design v7 (tissue-label target)
 
-**Status, 2026-11-23 (revision b: label sources, licences, limb data, parallel workstreams; see sections 3.1, 4.1, 12).** This is a full rewrite. It replaces the learned part of v6.x ([interior-model-plan-v6.md](interior-model-plan-v6.md)), which stays as the record of the Gaussian and intensity-code experiments. The mechanics, clothing and rig sections of v5.1 ([interior-model-handout.md](interior-model-handout.md)) still apply where cited. Nothing here has been trained beyond the tests in section 9.
+**Status, 2026-11-23 (revision c: A2 passed, see section 9.6; head MRI result 9b.6; architecture candidates 5.5; earlier revision b: sections 3.1, 4.1, 12).** This is a full rewrite. It replaces the learned part of v6.x ([interior-model-plan-v6.md](interior-model-plan-v6.md)), which stays as the record of the Gaussian and intensity-code experiments. The mechanics, clothing and rig sections of v5.1 ([interior-model-handout.md](interior-model-handout.md)) still apply where cited. Nothing here has been trained beyond the tests in section 9.
 
 **What changed and why.** The model's main target is no longer CT brightness. It is **which tissue occupies each point**: a label volume of bone, muscle, fat, organs and named structures. Brightness within one tissue turned out to be a small and largely unpredictable detail (section 9.4). Predicting it voxel by voxel made a deterministic model blur everything (section 9.3). A classifier that is unsure still puts each boundary at its most likely place, so the generated anatomy stays sharp, and the layers the rig needs (bone, muscle, fascia, fat, skin) are read straight off the labels.
 
@@ -121,6 +121,32 @@ Two options, compared in test A3 (section 8):
 - **Per tissue class:** mean HU and its spread, predicted from facts, scanner and outline features. Section 9.4 gives what is learnable: bone about 12%, muscle about 33%, subcutaneous fat about 53% of the variation between people. The rest is reported as uncertainty, not guessed.
 - **Optional texture:** for realistic-looking slices only, a decoder adds within-tissue texture (the saved MAISI codes can serve here). It is not part of the anatomy and never scored as anatomy.
 
+### 5.5 Architecture candidates for the whole body (open; raised 2026-11-23)
+
+An outside reviewer working on medical image generation advised against direct dense 3D generation: 3D convolutions need very large memory at full resolution, and transformers over dense 3D tokens get very long sequences. A2 is unaffected (a coarse 3 mm grid on a small card), but the whole-body generator is. Candidates, to be compared at equal compute before T1 is built:
+
+| Candidate | Idea | For | Against |
+|---|---|---|---|
+| 3D patch tokens, full attention | section 5.3 as written | simplest; true 3D context | tokens grow with the cube of size |
+| 3D tokens with a linear-time sequence model (Mamba) | replace attention by a state-space model | cost linear in tokens | needs an order over 3D tokens; masked, bidirectional use is less established |
+| Slice-based (2.5D) | 2D network per slice with attention across slices | far less memory; close to the original "key slices with context" idea | consistency across slices must be learned |
+| Tri-plane | three 2D feature planes; any 3D point is read from them | one persistent object at 2D cost | thin structures and occlusion between planes |
+| Low-dimensional shape model | predict atlas shape coefficients and layer thicknesses (hundreds of numbers), decode to labels | cheapest; gives rig meshes directly; reuses T0b | limited to what the atlas can express; needs a residual for detail |
+| Implicit field with physical constraints | a small network from position to label or distance, with layer-order and unit-slope constraints | no grid; smooth surfaces; addresses folding | one optimisation per person unless a second network predicts the field |
+
+**Measured cost of full attention (2026-11-23).** One training step (forward and backward, batch 1, bfloat16) of an 8-layer, width-384 transformer (14 M parameters) on an A10G (24 GB), random tokens:
+
+| Tokens | Seconds per step | Peak memory |
+|---|---|---|
+| 5,000 | 0.04 | 0.9 GB |
+| 20,000 | 0.35 | 2.6 GB |
+| 43,000 | 1.4 | 5.3 GB |
+| 80,000 | 4.5 | 9.7 GB |
+| 160,000 | 17.8 | 19 GB |
+| 350,000 | out of memory | — |
+
+Time grows with the square of the token count, memory linearly. An adult body is about 75 litres; with tokens only inside the body that is about 5,400 tokens at 24 mm cells, 43,000 at 12 mm and 350,000 at 6 mm. So full attention covers a whole body at 12 mm tokens (labels at 3 mm through a 4x label autoencoder, test A3) and not at 6 mm. A linear-time model such as Mamba becomes necessary only below about 12 mm tokens; the cheaper first answer there is coarse to fine (a whole-body pass at coarse tokens, then regional windows). Mamba itself was not timed: its package needs a CUDA compiler that the job image lacks. Known risks of Mamba here: a 1D scan order over 3D tokens, less established masked bidirectional training, and benchmarks in 3D medical segmentation that find it comparable to tuned convolutional U-Nets, not better.
+
 ## 6. From labels to the rig
 
 1. **Layers:** skin = outer boundary of the body; subcutaneous fat; fascia = fat–lean boundary; lean compartment; bone surfaces. All are read from the label volume, so they are consistent with each other.
@@ -200,6 +226,40 @@ Within-tissue differences (±8 to ±64 HU unexplained) are small next to the dif
 - **Encoding:** all 1,226 scans in 4 parallel RTX PRO 6000 jobs, 7.6–7.9 minutes each, about $1.40.
 - **Failures found along the way:** two out-of-memory crashes. All labels were held at once, and the containers report the host's 192 cores. One padding bug: the autoencoder needs sides that are multiples of 16.
 
+### 9.6 A2: labels from the surface, pelvis (2026-11-23) — passed
+
+Same people and split as stage A (351 / 16 / 42), 3 mm grid, 17 classes from labels v1, a 3D U-Net classifier with class-weighted cross-entropy; best validation epoch 37 of 54 (overfitting after that). A100, 33 minutes, about $1.40. Medians over the 42 test people:
+
+| Measure | Model | Nearest body | Training mean |
+|---|---|---|---|
+| Hip bone Dice (left / right) | **0.59 / 0.61** | 0.48 / 0.50 | 0.53 / 0.57 |
+| Femur Dice (left / right) | **0.71 / 0.69** | 0.61 / 0.59 | 0.63 / 0.64 |
+| Sacrum Dice | 0.56 | 0.46 | 0.57 |
+| Gluteus maximus / medius / minimus Dice | **0.74 / 0.68 / 0.56** | 0.64 / 0.51 / 0.37 | 0.56 / 0.58 / 0.42 |
+| Iliopsoas Dice | **0.64** | 0.50 | 0.56 |
+| Fat Dice | **0.73** | 0.64 | 0.56 |
+| Fat thickness error | **5.8 mm** | 6.7 | 7.9 |
+| Bone surface distance | **5.8 mm** | 6.2 | 6.1 |
+| Femoral-head centre (left / right) | **11.9 / 10.9 mm** | 14.3 / 15.0 | 12.1 / 12.8 |
+
+Per person against the nearest body: hip bone better in 35 of 42, sacrum and femur 33 of 42, gluteus maximus 35 of 42, femoral head 28 of 42, bone surface distance 24 of 42.
+
+**Reading.**
+- The proposal's first prediction held: with filled labels and a classification loss, bone Dice rose from stage A's 0.03 to 0.6–0.7 on the same data, and bones are sharp objects.
+- The surface carries information: the model beats copying the most similar body on almost every structure. The margin on bone *position* is modest (5.8 against 6.2 mm; femoral head still about 11 mm off); muscles and fat gain more.
+- The output is the most likely anatomy: smooth bowel and fat, no individual detail. That is the generative head's job.
+- Thin or small classes behave as section 3.2 of the proposal predicts: gluteus minimus 0.56 against maximus 0.74.
+
+**Caveats.** The window's height range still comes from the hip-bone labels (shared by all methods); labels are v1 (fat and lean by brightness); the surface-fitted atlas baseline is not built, nearest body and training mean stand in.
+
+### 9.7 Licensed tissue labels (tissue v1)
+
+TotalSegmentator `tissue_4_types` on all 409 whole-pelvis adults, none failed; 18 s per scan on an A10G; about $2.30. Shares of labelled tissue: subcutaneous fat 42%, skeletal muscle 35%, torso fat 18%, intermuscular fat 6%. Next: A2 repeated on these labels (workstream W4).
+
+### 9.8 Physics-informed network for tissue mechanics (toy, laptop)
+
+A ring of nearly incompressible soft tissue round a fixed bone, energy-form PINN. Garment pressure against the exact Lamé solution: mean error 6% of the peak displacement, worst 12%, 223 s per solve. Gravity (lying to standing): two network sizes agree to 3% on average, 9% at worst. It works without a mesh, but a finite-element solver is the faster, more exact tool for single solves. A PINN is worth revisiting at the rig stage as one network over pose and body shape, or to fit unknown stiffness.
+
 ## 9b. The head
 
 The face is where characters are judged, and the rig needs the jaw, the eyes and the thin facial soft tissue. The head therefore gets its own data plan.
@@ -254,6 +314,21 @@ Each person's T1 MRI was rigidly registered to their CT (mutual information, two
    - leave MRI out until the CT head model shows a need.
 3. **Registration** needs a failure check that does not rely on a fixed number. Candidate: agreement of the two body outlines compared with the spread over all pairs. One of four failed here.
 
+### 9b.6 GRACE against CT on all 42 paired heads (H3b, 2026-11-23)
+
+GRACE (UNETR, 11 head tissues from T1 MRI; research-only weights) run as in its own test script, labels carried to each person's CT by rigid registration (all 42 registered), compared outside the skull. L4 card, 47 minutes, about $0.65.
+
+| Class | Brightness rules (4 people) | GRACE (42 people, median; 10th–90th) |
+|---|---|---|
+| Lean / muscle Dice | 0.53–0.69 | 0.83 (0.78–0.85) |
+| Fat Dice | 0.06–0.26 | 0.50 (0.23–0.66) |
+| Air Dice | — | 0.52 (0.35–0.61) |
+| Eyes against expert labels | — | 0.07 |
+
+The voxels GRACE calls bone have a median CT value of 320–510 HU, below the 595 HU bone threshold, so most are not dense bone on CT. Likely contributors, not separated: GRACE was trained on brain-research MRI of older adults while these are radiotherapy head-and-neck scans; the neck bends between the two sessions and the registration is rigid; our intensity scaling into GRACE's range is an assumption.
+
+**Decision D3: not yet.** MRI heads stay out of training; the head is CT-first.
+
 ### 9b.5 Head tests
 
 | Test | Question | Cost |
@@ -286,16 +361,17 @@ Each person's T1 MRI was rigidly registered to their CT (mutual information, two
 
 | Workstream | Depends on | Status | Cost so far / next |
 |---|---|---|---|
-| W1 Labels v1, all CT (brightness + structures) | codes_v1 crops | running, 4 CPU jobs | about $0.05 |
-| W2 Licensed tissue labels, 409 pelvises | licence key | smoke running (L4) | next: card choice from the smoke's seconds per scan |
-| W3 **A2**: surface to labels, pelvis, deterministic | W1 | blocked on W1 only | about $2–4 (smoke, then the card picked by the cost table) |
+| W1 Labels v1, all CT (brightness + structures) | codes_v1 crops | done, 1,226 scans, none failed | $0.05 |
+| W2 Licensed tissue labels, 409 pelvises | licence key | done (9.7) | $2.30 |
+| W3 **A2**: surface to labels, pelvis, deterministic | W1 | **done, passed (9.6)** | $1.40 |
 | W4 A2 on tissue labels (label-source comparison) | W2, W3 | after both | small |
 | W5 **A3**: label autoencoder capacity (MAISI mask autoencoder against our own) | W1 | can start as soon as W1 lands, parallel to W3 | small GPU |
-| W6 Head: H3b GRACE against CT, 42 people | none | running (L4, about $0.70) | |
+| W6 Head: H3b GRACE against CT, 42 people | none | done: agreement too weak (9b.6) | $0.65 |
 | W7 Head CT labels: HaN-Seg's 42 CTs (expert face labels) plus TotalSegmentator's 110 skulls, with licensed head tasks | licence key | not blocked | CPU plus small GPU |
 | W8 Limb data | decision D2 | desk research done (4.1) | none until D2 |
 | W9 Review of this plan and the training-target proposal | none | with the user | — |
-| W10 Masked transformer T1 | W3 passing | after A2 | GPU hours |
+| W10 Masked transformer T1 | W3 passing, and the architecture comparison of 5.5 | next | GPU hours |
+| W11 Architecture comparison (5.5) | W1 | next | small GPU |
 
 **Not blocked and worth running in parallel now:** W5 (once W1 lands), W7, and the review W9. **Blocked:** W3 and W5 on W1 (about 25 minutes), W4 on W2, W8 on decision D2, W10 on A2.
 
