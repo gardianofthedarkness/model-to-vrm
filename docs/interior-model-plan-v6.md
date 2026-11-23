@@ -1,4 +1,6 @@
-# Interior model: plan version 6.2
+# Interior model: plan version 6.4
+
+> **Read section 12 first.** Version 6.4 (2026-11-22) changes what the model generates: a learned 3D code of the CT volume, not Gaussians, and sets the final goal as one model for the whole body. Sections 2, 3 and step 4a/4b below describe the Gaussian design and are kept as the record of what was tried.
 
 **Status: the working plan from 2026-11-22.** It replaces the learned part of version 5.1 ([interior-model-handout.md](interior-model-handout.md)) and keeps that document's mechanics, clothing and rig sections, which are cited here by section number. Version 6 comes from the eighth review round, which proposed the persistent 3D field and the Gaussian head, and from the T0b trials run the same day. Version 6.1 adds the ninth round: bidirectional creation first, the optional description, coarse-to-fine generation, modality noise and editing (rows 8–12 of section 1). Version 6.2 folds in the tenth round, a review of 6.1 (rows 13–18 of section 1; all six accepted). Nothing in it has been trained.
 
@@ -217,6 +219,32 @@ What this means for v6: supervising with images (section 5) instead of picked bo
 
 The six-person picture holds across the population. The count is 409 where T0a reported 408; the one-person difference in selection has not been traced.
 
+**Steps 1 and 4a, one thigh** (s0783 left; crop 152 × 115 × 315 voxels at 1.5 mm, about 2.6 hours on one A10G):
+
+*Round trip: passed.* The reopened volume and skin mesh agree on random oblique planes to 1.5 mm (one voxel; 95th percentile 2.1 mm). Both controls fail as they must: 18 mm with the mesh mirrored about the scanner midline, 54 mm in voxel units.
+
+*Capacity ($k = 1$, all slices, scored on the same slices):*
+
+| Gaussians | HU error | Bone edge | Skin edge | Fat Dice |
+|---|---|---|---|---|
+| 13,000 | 64 | 0.47 mm | 0.11 mm | 0.77 |
+| 53,000 | 52 | 0.19 mm | 0.08 mm | 0.81 |
+| 105,000 | 49 | 0.17 mm | 0.09 mm | 0.82 |
+
+About 50,000 Gaussians hold this thigh's bone and skin edges to a fraction of a voxel. The remaining intensity error is mostly the fine texture of fat and CT noise.
+
+*Sparse context, scored on withheld native axial slices (bone edge / fat Dice):*
+
+| Context | Linear interpolation | Gaussians, 13k | 53k | 105k |
+|---|---|---|---|---|
+| every 2nd slice | 0.15 mm / 0.78 | 0.53 / 0.77 | 0.84 / 0.80 | 1.6 / 0.77 |
+| every 4th | 0.20 / 0.76 | 2.5 / 0.72 | 3.4 / 0.62 | 9.7 / 0.39 |
+| every 8th | 0.33 / 0.74 | 11.9 / 0.31 | 9.6 / 0.31 | 10.6 / 0.31 |
+
+Free Gaussians fitted to one person's sparse slices are worse than interpolation everywhere, and worse with more Gaussians: they fit the given slices (training error falls) and leave the gaps between them unconstrained. Nothing in a lone fit says how anatomy continues between slices. That is the prior's job, the network's or the atlas anchors'. The k = 2, 4, 8 rows therefore test the prior, not the capacity. Step 4b reruns them with anchored Gaussians.
+
+*Native asset reload: not yet exact.* The 105,000-Gaussian file, reopened in a separate process and evaluated from its written definition, differs from the in-process render by 14 HU, and its bone edge against CT is 4.7 mm. Training cut each Gaussian at its voxel box, while the file's definition sums every Gaussian to 5σ. Fix: one written truncation rule, used by training and by the reader alike, before step 4b.
+
 ## 10. Constraints
 
 - No hand-set decision numbers in the pipeline. Experiment settings (Gaussian-count grid, context spacings $k$, iteration caps) are declared in each job's header and swept, never tuned to a result.
@@ -234,3 +262,82 @@ The six-person picture holds across the population. The count is 409 where T0a r
 6. **Scoring the exterior-only case.** The right baseline and interval measure when the exterior leaves the muscle–fat split unobserved (v5.1 section 3.1).
 7. **Verification** of the cited works (Atlas documentation, Gaussian slice-to-volume work, Latent Forcing, Modality Forcing, Diffusion Forcing) from primary sources. The reviewer could not confirm that the two forcing methods are what keeps Atlas from drifting.
 8. **Edit training pairs.** Which synthetic deformations of real volumes are anatomically believable enough to train an editor, and how the mask is stored compactly in the asset.
+
+
+## 12. Version 6.4: generate a volume code; train for the whole body
+
+### 12.1 What was decided, and on what evidence
+
+| Evidence | Result |
+|---|---|
+| Thigh round trip (step 1) | Passed: 1.5 mm, one voxel; both planted errors caught. |
+| Gaussian capacity (step 4a) | 53k Gaussians hold the thigh: bone edge 0.19 mm, skin edge 0.08 mm, fat Dice 0.81. |
+| Gaussians fitted to sparse slices | Far worse than linear interpolation (bone edge 3.4 mm against 0.20 mm at every 4th slice). A container has no prior. |
+| Saved Gaussian file | Did not read back exactly: 3.7 HU from cut-off tails, 10 HU from the test's own interpolation. |
+| Reviewer (round 11) | Option A (volume code) for the first population run; a named-shell trial and a hybrid as side experiments. |
+| **E1a, frozen MAISI autoencoder** (NV-Generate-CT `autoencoder_v1.pt`, no training, 16 times fewer numbers than voxels) | Thigh: bone edge 0.24 mm, skin edge 0.08 mm, outer / inner femur wall 0.18 / 0.30 mm, wall-thickness error 0.08 mm, fat Dice 0.67. Ten pelvises (median): bone edge 0.39 mm, skin edge 0.17 mm, fat Dice 0.92, wall-thickness error 0.05 mm. |
+
+**Decision (user, 2026-11-22): option A.** The model generates the autoencoder's 3D code; no further Gaussian runs. The thigh's low fat Dice is mostly scanner noise crossing the fat threshold inside muscle, seen in the pictures; a fair fat measure (fat thickness or share per region) replaces voxel Dice. The inner-wall score is used on shafts only: it breaks in spongy bone such as the femoral head.
+
+Known limits of MAISI's autoencoder: intensities above 1000 HU are clipped; decoded air near a crop's border is not exactly air; the weights are research-only (NVIDIA Open Model License), so a product needs our own autoencoder, trained on training people only.
+
+### 12.2 The design now
+
+1. **Object.** For a character: a code grid $c$ (4 channels, a quarter of the voxel grid per axis) in the character's frame, plus the frozen decoder $D$. $V = D(c)$ is the CT-like volume; slices at any angle are cuts of $V$.
+2. **Condition.** The outside surface as a volume on the code grid (inside/outside distance), the position of the window in the body (section 12.3), and the optional facts of section 5b.
+3. **Generator.** Deterministic network first, then conditional diffusion or flow on $c$. Bidirectional attention over the window, with neighbouring windows as context.
+4. **Export.** Decode; write NIfTI with the mesh transform; fit the layered atlas into $V$ with the T0b machinery for named meshes and the rig.
+
+Dropped: Gaussians as the generated object, the reload fixes, anchoring and repeat-fit tests (old steps 4a, 4b). Kept: exterior-only main task, the three-run benchmark without leaks, the description test, the context test, sections 4 (MRI), 5b, 6 and 10.
+
+### 12.3 The whole body, not the pelvis only
+
+**Final goal (user): one model trained for the whole body.** The pelvis is only the first proof.
+
+**What the data covers.** 1,226 adults; no scan is a whole body. Counts of adults with the structure whole in the scan (present at all in brackets):
+
+| Region | Whole | (Present) | Official split, train / val / test |
+|---|---|---|---|
+| Skull | 110 | (472) | 90 / 7 / 13 |
+| Neck (C4) | 215 | (250) | 192 / 9 / 14 |
+| Chest (T6) | 575 | (732) | 510 / 30 / 35 |
+| Abdomen (L3) | 557 | (643) | 483 / 21 / 53 |
+| Pelvis (both hip bones and sacrum) | 409 | (612) | 351 / 16 / 42 |
+| Shoulder (scapula) | 173 | (809) | 150 / 8 / 15 |
+| Upper arm (humerus) | 87 | (614) | 73 / 5 / 9 |
+| Thigh (femur) | 75, of which 29 long | (564) | 62 / 5 / 8 |
+| Forearm, hand, shin, foot | no labels; rarely in the scans | | |
+
+So this dataset supports head to mid-thigh, with arms and thighs thin and nothing beyond elbow and knee. A whole-body model needs more data for the limbs (section 12.6) or falls back to the atlas there.
+
+**How one model covers the whole body from partial scans.**
+- **Train on windows.** Each training example is a fixed-size window of a scan (code grid plus its surface volume). All 1,226 adults contribute whatever they show; nothing requires a whole-body scan.
+- **Tell the model where the window is.** Each window carries its position in a body frame. In training the frame comes from the scan's labelled bones; at inference it comes from the character's own skeleton, which the existing pipeline already fits. No hand-set numbers: the frame is landmarks.
+- **Generate a body as overlapping windows** that see their neighbours' codes as context, coarse to fine: a low-resolution pass for the whole figure, then windows at full resolution. Seams are tested (12.4, test T4).
+- **Split by person, once, for everything:** the dataset's own official split (train 1,080 / val 57 / test 89 adults). The autoencoder, if we train our own, sees training people only.
+
+### 12.4 Tests left before the full training
+
+| Test | Question | Data | Rough cost |
+|---|---|---|---|
+| **T1 (was E2)** Outside only, pelvis | Does the model beat an atlas fitted to the same surface, on held-out people? Femur position, skin-to-bone depth, fat thickness, paired by person. The decisive test. | 351 / 16 / 42 | about a GPU day |
+| **T2 (was E3)** Context | Local surface patches against the whole window and its neighbours. | same | two more runs |
+| **T3** One model, many regions | Does training on chest, abdomen and pelvis windows together help or hurt the pelvis result? | all trunk windows | about a GPU day |
+| **T4** Seams | Do neighbouring windows agree where they overlap, and does the coarse pass keep long bones straight across windows? | held-out long scans | hours |
+| **T5** Export | Atlas layers fitted into decoded volumes: within the T0b noise? Folding at the groin? | held-out pelvises | CPU |
+| **T6** Limbs and head | How far do 87 upper arms, 29 long thighs and 110 skulls go; which extra data is needed. | this set, then 12.6 | small |
+| **T7** Character surface | CT bodies are supine and real; characters are stylised and stand. Run on the swimsuit base and check plausibility and repeatability. | our characters | small |
+
+Only after T1 passes is larger money spent. If T1 fails, the question becomes whether the exterior carries the information at all, before any change of architecture.
+
+### 12.5 Work before the first training run (T1)
+
+1. Fix the split (the official one). Done from the census.
+2. Encode every adult scan once with the frozen encoder, whole scan, so that pelvis and whole-body training read the same codes. Store per scan: code grid, body mask, outside-surface distance volume, body-frame landmarks, facts.
+3. A surface-only atlas baseline: place the atlas from the skin surface alone (no bones), population average from training people only.
+4. The fair fat measure and the three-run scoring code.
+5. The window loader and the deterministic network.
+
+### 12.6 Open: data for limbs and head
+
+To check, with licences, before T6: whole-body CT sets that include legs and arms (for example the autoPET FDG-PET/CT collection), lower-limb CT angiography sets, and the head sets already held (42-person head and neck CT/MR). None verified yet.
