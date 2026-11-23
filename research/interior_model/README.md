@@ -19,6 +19,8 @@ are not in this repository.
 | Label volumes v1 | `labels_job.py` | `labels_v1/` | v7 3.1 |
 | Licensed tissue labels (TotalSegmentator `tissue_4_types`) | `tissue_job.py` | `tissue_v1/` | v7 9.7 |
 | **A2: surface to labels, pelvis** | `a2_job.py` | `a2/` | v7 9.6 (passed) |
+| Milestones 12 Tissue and 14 Baseline: classifier on licensed tissue labels; surface-fitted atlas; window from the outline | `a2b_job.py` (env `LABELSRC`, `WINDOW`) | `a2b/` | v7 section 13 |
+| Milestone 13 Compress: label autoencoder at 12 and 24 mm tokens | `compress_job.py` | `compress/` | v7 section 13 |
 | Head: MRI labels against CT (HaN-Seg) | `h3_job.py`, `h3b_job.py` | `h3/`, `h3b/` (in the HaN-Seg repo) | v7 9b.4, 9b.6 |
 | Attention cost at whole-body token counts | `bench_job.py` | job log | v7 5.5 |
 | PINN toy for tissue mechanics | `../pinn/pinn_ring.py`, `pinn_gravity.py` | local | v7 9.8 |
