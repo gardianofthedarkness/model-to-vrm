@@ -416,14 +416,14 @@ One word and one rising number each, in the order they are done. From here on on
 | 12 | Tissue | Classifier repeated on the licensed fat and muscle labels | W4 | done (9.9): licensed labels become the default |
 | 13 | Compress | Label autoencoder: are thin structures kept at 12 mm tokens | A3, W5 | done (9.9): yes at 12 mm; plain transformer viable |
 | 14 | Baseline | Surface-fitted atlas baseline; window set from the surface alone | three-run benchmark | done (9.9): body position is now the main error |
-| 15 | Architecture | 3D tokens against slices, tri-plane, shape model, implicit field, at equal cost | section 5.5, W11 | to do |
-| 16 | Transformer | Masked bidirectional model per person, surface only, pelvis | T1, W10 | to do; the decisive test |
+| 15 | Tokens | Proportional, part-relative token grids: the body split by the fitted skeleton into parts (trunk, head, limb segments, hands, feet), each with its own grid aligned to its bones and sized to its smallest structures (about 12 mm tokens for the trunk, 4–6 mm for the face, 3–4 mm for hands and feet); one transformer attends across all parts. Compared against a fixed grid and the other candidates of section 5.5 | section 5.5, W11 | to do |
+| 16 | Transformer | Masked bidirectional model per person, surface only, on part-relative tokens; tested on **the pelvis and the face** (HaN-Seg's 42 CTs with expert face labels, plus the CT skulls) | T1, W10 | to do; the decisive test |
 | 17 | Context | Does more surface, or one revealed region, help | T2, E3 | to do |
 | 18 | Trunk | One model over chest, abdomen and pelvis | T3 | to do |
 | 19 | Seams | Regions agree where they meet; long bones stay continuous | T4 | to do |
 | 20 | Diffusion | Generative head: sharp, varied, calibrated bodies | D, step 5 | to do |
 | 21 | Rig | Fixed-topology meshes fitted into generated labels; layers; skeleton binding | T5, step 7 | to do |
 | 22 | Skull | Head in the shared model (CT heads, expert face labels) | H4, W7 | to do |
-| 23 | Limbs | Forearms, hands, shins, feet: data decision, then training | T6, W8, decision D2 | waiting for a decision |
+| 23 | Limbs | Wrists and ankles learned (licensed limb-bone labels: 63 CT wrists; MRI: 95 ankles, 253 wrists, unlabelled so far); fingers and toes by the existing optimization | T6, W8 | wrist labels running; MRI labelling needs approval |
 | 24 | Character | Stylised standing characters, swimsuit base | T7, step 6 | to do |
 | 25 | Edit | Local edits: thicker thighs, bigger eyes, match a portrait | step 8 | later |
