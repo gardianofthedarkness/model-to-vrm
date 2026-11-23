@@ -172,6 +172,69 @@ Within-tissue differences (±8 to ±64 HU unexplained) are small next to the dif
 - **Encoding:** all 1,226 scans in 4 parallel RTX PRO 6000 jobs, 7.6–7.9 minutes each, about $1.40.
 - **Failures found along the way:** two out-of-memory crashes. All labels were held at once, and the containers report the host's 192 cores. One padding bug: the autoencoder needs sides that are multiples of 16.
 
+## 9b. The head
+
+The face is where characters are judged, and the rig needs the jaw, the eyes and the thin facial soft tissue. The head therefore gets its own data plan.
+
+### 9b.1 Data held (all in private repositories)
+
+| Set | People | Modality | Head coverage | Head labels | Licence |
+|---|---|---|---|---|---|
+| TotalSegmentator CT v2.0.1 | skull whole in 110 adults (90 / 7 / 13 by split), present in 472; brain whole in 156; C1–C2 in about 215 | CT | whole skull in 110; often with neck (75 reach C4) | skull (whole, incl. jaw), brain, C1, C2, carotids, thyroid, trachea, oesophagus; **no face soft-tissue, eye or muscle labels** | CC BY 4.0 |
+| HaN-Seg | 42 adults (36–79) | **CT and T1 MRI of the same person** | face in view in all 42 (130 mm); top of the head never; facial soft tissue in front of bone: median 12 mm (10–17) | 30 expert structures: mandible, eyes (anterior and posterior), lips, oral cavity, buccal mucosa, parotid and submandibular glands, optic nerves, brainstem, larynx… | **CC BY-ND 4.0** (no derivatives) |
+| IXI | 581 T1 heads, adults 20–86, with height and weight | MRI, about 1 mm | whole head; face clear of the edge in 489 | none | CC BY-SA 3.0 |
+| TotalSegmentator MRI v3.0.0 | 1,296 scans, mostly body; many children; 276 without age | MRI, mixed sequences, often 3–6 mm slices | brain in some | 50 structures, mostly body | not yet verified |
+
+### 9b.2 How the head enters the model
+- **Same target, same model.** Head scans contribute tissue labels exactly like body scans. With labels as the target, MRI needs no intensity calibration: fat is "fat" in either modality. The density head learns from CT only.
+- **CT gives bone,** which is nearly black on MRI and therefore indistinguishable from air there. **MRI gives soft tissue in bulk,** with 581 IXI heads against 110 CT skulls.
+- **Labels for MRI heads** (no open model covers the face):
+  - fat and lean from T1 brightness, after bias-field correction, split by a two-class mixture fitted per scan;
+  - the brain from TotalSegmentator's open MRI model (Apache-2.0);
+  - bone and air together as one "dark" class, with the skull's shape supplied by CT heads through the shared model;
+  - eyes, jaw and the small facial structures from HaN-Seg's expert labels (42 people).
+- **Validation:** on HaN-Seg's 42 people, MRI-derived labels are compared with CT of the same person after registration (test H3). This decides how far MRI labels can be trusted, per class.
+- **Position in the body:** head tokens get body-frame positions like all others; the neck scans (C1–C4) link the head to the trunk.
+
+### 9b.3 Exclusions, licences, privacy
+- **Minors excluded.** People under 18, and TotalSegmentator MRI scans without a recorded age (276), are excluded. IXI and HaN-Seg are all adults.
+- **HaN-Seg is no-derivatives.** Private training is the intended use; nothing derived from it (labels, registered volumes) is published.
+- **IXI is share-alike.** Anything derived from it that we share carries the same licence.
+- **Faces.** Head scans can reconstruct a real person's face. They stay in private storage, and no face rendering leaves a private job (consent rule of 2026-11-22).
+- **Licensed segmenters.** TotalSegmentator's face, fat and limb MRI models require a licence (free for academic, non-commercial use). They are not used without a decision on that licence.
+
+### 9b.4 First result: simple MRI labels do not match CT (H3 smoke, 4 people, 2026-11-23)
+
+Each person's T1 MRI was rigidly registered to their CT (mutual information, two starting alignments, best kept) and compared outside the skull. Inside the skull the brain dominates MRI brightness, so the comparison was restricted to the face, scalp and neck. MRI classes came from bias correction plus a three-class split of brightness; CT classes from HU.
+
+| Measure | Result (4 people) |
+|---|---|
+| Registration, body overlap | 0.92–0.98 in 3, failed in 1 (0.37) |
+| Fat overlap, CT vs MRI | 0.06–0.26 |
+| Lean overlap | 0.53–0.69 |
+| Dark (bone + air) overlap | 0.40–0.47 |
+| MRI "dark" share against CT bone + air share | 29–41% against 11–12% |
+| Facial soft-tissue depth, CT / MRI | 13–19 mm / 5–10 mm |
+
+**Conclusion:** brightness rules do not turn T1 MRI into tissue labels that agree with CT. Likely causes: fatty bone marrow and glands are bright on T1 but bone or gland on CT; signal falls off towards the coil's edge; partial volume in thicker MRI slices. The full 42-person run was not made: the method itself fails.
+
+**Revised head plan:**
+1. **CT first for the head:** 110 whole and 362 partial skulls (TotalSegmentator), plus HaN-Seg's 42 CTs, which carry the expert face labels (eyes, jaw, lips, oral cavity, glands) on the CT grid. CT fat and lean come from HU, which works.
+2. **MRI labels need a learned mapping,** not rules. Options:
+   - train a small MRI-to-label network on HaN-Seg's 42 registered pairs, with CT-derived labels as targets (few people; checked by leave-out);
+   - TotalSegmentator's licensed MRI tissue model (free for academic, non-commercial use; a licence decision);
+   - leave MRI out until the CT head model shows a need.
+3. **Registration** needs a failure check that does not rely on a fixed number. Candidate: agreement of the two body outlines compared with the spread over all pairs. One of four failed here.
+
+### 9b.5 Head tests
+
+| Test | Question | Cost |
+|---|---|---|
+| **H1** CT head census | Done: the table above. | free |
+| **H2** MRI head labels on IXI | Only after H3 shows a mapping that agrees with CT. | later |
+| **H3** MRI against CT on HaN-Seg | Smoke on 4 people done (9b.4): brightness rules fail. Next version: a learned MRI-to-label mapping, scored the same way. | CPU or small GPU, cents to $1 |
+| **H4** Head in the model | Head tokens from CT and MRI in the shared model; scored on held-out CT heads (skull, brain, facial fat depth) and HaN-Seg structures. | after T1 |
+
 ## 10. Open problems
 
 1. **Limb and head data.** Nothing below the elbow or knee; few arms, thighs and skulls. Candidates, unverified: autoPET whole-body PET/CT (roughly skull to mid-thigh), the New Mexico Decedent Image Database (head-to-toe CT by application; scans of deceased people, which must fit the consent rules). Until then the atlas fills these parts.
