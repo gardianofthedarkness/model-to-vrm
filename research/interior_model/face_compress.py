@@ -119,7 +119,7 @@ if __name__ == '__main__':
         rows = {names.get(k, str(k)): dict(dice=round(float(np.median([d for d, _ in v])), 3), thickness_mm=round(float(np.median([t for _, t in v])), 1), heads=len(v)) for k, v in per.items()}
         d = np.array([r['dice'] for r in rows.values()]); th = np.array([r['thickness_mm'] for r in rows.values()])
         bins = {'%g-%g mm' % (a, b): (round(float(np.median(d[(th >= a) & (th < b)])), 3) if ((th >= a) & (th < b)).any() else None, int(((th >= a) & (th < b)).sum())) for a, b in ((0, 3), (3, 6), (6, 12), (12, 1e9))}
-        res['variants'][var] = dict(token_mm=F * ds, label_mm=ds, best_step=best[2], seconds_per_step=round(sec_step, 3), peak_gpu_gb=round(peak, 2), batch=bs, crop=S,
+        res['variants'][var] = dict(token_mm=F * ds * (3 if PART == 'pelvis' else 1), label_mm=ds * (3 if PART == 'pelvis' else 1), best_step=best[2], seconds_per_step=round(sec_step, 3), peak_gpu_gb=round(peak, 2), batch=bs, crop=S,
                                     median_dice=round(float(np.median(d)), 3), by_thickness=bins, per_class=rows)
         log(var, json.dumps({k: v for k, v in res['variants'][var].items() if k != 'per_class'}))
         del net, opt; torch.cuda.empty_cache()

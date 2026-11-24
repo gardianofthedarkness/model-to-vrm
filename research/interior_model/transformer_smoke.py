@@ -103,7 +103,12 @@ if __name__ == '__main__':
     split = {c: ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train') for i, c in enumerate(hs)}
     split.update({c: v['split'] for c, v in fidx['heads'].items() if v['source'] == 'ts'}); split.update({c: v['split'] for c, v in pidx['people'].items()})
     people = sorted(set(fidx['heads']) | set(pidx['people'])); sp = {s: [c for c in people if split[c] == s] for s in ('train', 'val', 'test')}
-    if lim: sp = {s: v[:lim] for s, v in sp.items()}
+    if lim:                                                                                                  # balanced: half people with a face, half with a pelvis
+        rs = np.random.default_rng(1)
+        def pick(v):
+            f = [c for c in v if c in fidx['heads']]; p = [c for c in v if c in pidx['people'] and c not in fidx['heads']]
+            return sorted(set(rs.permutation(f)[:max(1, lim // 2)].tolist()) | set(rs.permutation(p)[:max(1, lim - lim // 2)].tolist()))
+        sp = {s: pick(v) for s, v in sp.items()}
     log('people', {s: len(v) for s, v in sp.items()})
     t1 = time.time(); data = {}
     for s in sp:
@@ -124,7 +129,8 @@ if __name__ == '__main__':
         for c in sp['train']:
             for p in data[c]:
                 if p.name == part: v = p.L[p.L != UNK]; sh += np.bincount(v, minlength=NC)[:NC]
-        sh /= max(sh.sum(), 1); w = np.where(sh > 0, sh, sh[sh > 0].min()) ** -0.5; wts[part] = torch.tensor(w / w[sh > 0].mean(), dtype=torch.float32, device=DEV)
+        if not sh.any(): wts[part] = torch.ones(NC, device=DEV); continue
+        sh /= sh.sum(); w = np.where(sh > 0, sh, sh[sh > 0].min()) ** -0.5; wts[part] = torch.tensor(w / w[sh > 0].mean(), dtype=torch.float32, device=DEV)
     net = Net(fdim, C, 2).to(DEV); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=0.05); sched = torch.optim.lr_scheduler.OneCycleLR(opt, 3e-4, total_steps=steps, pct_start=0.05)
     scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); rng = np.random.default_rng(0); res['params_m'] = round(sum(p.numel() for p in net.parameters()) / 1e6, 1)
     CROP = 16                                                                                              # tokens per side decoded for the loss
