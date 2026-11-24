@@ -22,7 +22,7 @@ import os, sys, json, time, math, numpy as np
 import torch, torch.nn as nn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import make_ae
-from transformer_smoke import tiles, decode, dice_table, AMP, UNK, DEV, log
+from transformer_smoke import tiles, decode, AMP, UNK, DEV, log
 from scipy import ndimage as ndi
 CFG = dict(kv.split('=') for kv in os.environ.get('CFG', '').split(',') if kv)
 PARTS = CFG.get('parts', 'pelvis').split('+'); D = int(CFG.get('d', 384)); LAYERS = int(CFG.get('layers', 8)); DRAWS = int(CFG.get('draws', 3)); VALN = int(CFG.get('valn', 8))
@@ -52,6 +52,14 @@ class Flow(nn.Module):
         hs = s.fin(sfeat) + s.pe(spos) + s.part(spart) + s.kind.weight[1]
         hf = torch.cat([s.age(age) * agek + s.fid.weight[0], s.sex(sex) + s.fid.weight[1], s.cls(cls) + s.part(cpart) + s.fid.weight[2]], 0)[None] + s.kind.weight[2]
         return s.out(s.enc(torch.cat([hf, hs, hi], 1))[:, -zt.shape[1]:])
+
+def dice_table(P, T, names):
+    """per-class Dice as transformer_smoke.dice_table (classes with >= 10 true voxels; outside and unknown left out), from one joint count."""
+    m = np.bincount(P.ravel().astype(np.int64) * 256 + T.ravel(), minlength=65536).reshape(256, 256); out = {}
+    for k in np.nonzero(m.sum(0) >= 10)[0]:
+        if k == 0 or k == UNK: continue
+        out[names.get(int(k), str(k))] = float(2 * m[k, k] / (m[k].sum() + m[:, k].sum()))
+    return out
 
 def stats(L, NC, mm):
     """per class present (>= 10 voxels): volume (ml), number of connected pieces, centre (mm in the part frame)."""
