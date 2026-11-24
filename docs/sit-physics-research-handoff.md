@@ -253,6 +253,42 @@ Before optimising, profile what the GTX 1650 spends its time on: tissue solve, c
 
 ![dynamic vs quasi-static](img/muscle_static.png)
 
+**Test 3. Why the knee looks wrong** (`knee_diagnose.py`, fixed flesh run, every clip frame).
+- **The kneecap.**
+  - `elf_leg_flesh.py` pins the patella rigidly to the shank. As the knee bends it lifts off the femur: in contact up to about
+    30°, 3.0 mm off at 63°, and **3.6 mm off at 100°**. It never goes into the femur.
+  - In a real knee the patella is a sesamoid bone inside the quadriceps tendon. It is held against the femoral groove and slides
+    down it as the knee bends, so it does not turn with the shin.
+  - **The fix exists in established models.** The Rajagopal / Arnold OpenSim leg (and myoLegs, built from it) has a patella body
+    whose pose relative to the femur is a published function of the knee angle. Or solve it ourselves: patella in contact with
+    the femoral groove, with the patellar ligament from the tibial tuberosity at constant length.
+- **The flesh at the knee.** 1 511 tets lie within 3 tet edges of the patella. At 100° there are 64 inverted, **57 of them in the
+  crease behind the knee, and 56 of the 64 have pinned nodes on two different bones**.
+  - The rule "a node nearer a bone than the skin rides rigidly with that bone" puts thigh-pinned and shank-pinned nodes inside
+    the same tet. That tet must invert as the knee closes.
+  - **Fix:** pin only the nodes on the bone surfaces (an attachment, not a volume rule). Leave the joint flesh free, with
+    self-contact in the crease.
+
+![knee diagnosis](img/knee_curves.png)
+
+**Test 4. The atlas bones are wound inward** (`bone_penetration_recheck.py`).
+- Every Z-Anatomy bone mesh has negative signed volume. Warp's winding-number inside test then calls every point "outside", so the
+  muscle runs' own "0 nodes inside bone" counts proved nothing.
+- **Re-measured with the winding corrected:** the free surface nodes of the rectus never enter a bone in the sit-with-contact run
+  or in either isometric run. The 306 nodes that sit up to 3.4 mm inside are glued attachment nodes, which are embedded by
+  construction.
+- `newton_muscle_active.py` now reorients the bones before building contact. This matters for Newton's contact normals too. Any
+  future use of atlas bones must reorient them first.
+
+**What Fleshy is, and what it is not.** [Fleshy](https://fleshy.pages.dev/) is a paid Blender add-on: a GPL interface with a
+compiled closed core, Windows only, needing an all-quad mesh with Subdivision Surface.
+- It is a **pose-only contact deformer**: "each frame follows from its pose". It finds self-contact and colliders, dents the skin
+  and bulges it around the dent, and "Corner Taper" makes a closing fold crease instead of swell.
+- It has no internal tissue, no dynamics and no muscle state, so it cannot know that a contracted thigh is hard or that fat slides
+  over fascia.
+- **Use it only as a visual reference** for the knee crease and the seat dent: what the crease should look like at 100–150°.
+  Buying it is the user's call.
+
 **Still to do, in this order:**
 
 Each experiment runs in minutes on the laptop unless marked, and becomes a notebook.
@@ -300,6 +336,34 @@ Each experiment runs in minutes on the laptop unless marked, and becomes a noteb
    of the reserve torque.
    - **Pass:** reserves are small next to the muscle torques.
 9. **Optional: RL imitation** (smoke test locally; the real run needs asking).
+
+## 6b. The tissue relationships the simulation needs
+
+This is the point of having internal anatomy rather than a surface deformer. Each relationship below is something a real thigh
+does during sitting, and something our current model gets wrong or leaves out. Sources are to be checked before any number is
+used.
+
+| relationship | what real tissue does | our model now | what to add |
+|---|---|---|---|
+| muscle ↔ bone | attached through tendon and aponeurosis patches, otherwise slides on periosteum | glued patches + frictionless contact (works) | bones reoriented (Test 4); tendon patches with finite size (§5, review point) |
+| patella ↔ femur, quadriceps | patella rides in the quadriceps tendon, pressed into the femoral groove | patella rigid with the shank, lifts 3.6 mm off | patellofemoral kinematics from the Rajagopal/Arnold model, or a contact + ligament-length solve |
+| **active muscle stiffness** | a contracting muscle gets **stiffer**, not only shorter. Shear-wave elastography finds muscle shear modulus rising roughly linearly with active force (e.g. Bouillard, Nordez & Hug 2011, *to verify*) | active strain changes only the rest shape; stiffness is a constant 500 Pa, so an active muscle is as soft as a relaxed one | add an active fibre stress to the energy, Blemker & Delp's form (stress along the fibre ∝ a·f_L(λ)), which gives activation-dependent stiffness along the fibre. Or make G depend on a, calibrated against elastography data. With the Hill-force calibration (§5) this also fixes "a ≠ shortening" |
+| muscle ↔ muscle | each muscle in its epimysium, sliding on its neighbours; groups bound by intermuscular septa | single muscle only | all thigh muscles with frictionless contact; septa from the atlas as stiff shells |
+| muscle ↔ fat | deep fascia (fascia lata) wraps the muscles; fat sits over it and slides a little | no fascia, no fat layer in the muscle runs | fascia lata as a stiff membrane over the muscle bundle; fat tied to it, or sliding (compare, §6 item 3) |
+| fat ↔ skin | fat lobules held by fibrous septa (retinacula cutis) running from skin to fascia: skin slides only a few mm and fat bulges between septa | one homogeneous flesh mesh | fat as soft, nearly incompressible solid; skin as a stiffer membrane; septa as tethers whose length limits skin slide |
+| skin | anisotropic, pre-tensioned, stiffens sharply with stretch (collagen) | embedded in tets, no own stiffness | skin membrane with a stiffening law (e.g. Fung-type), from measured data |
+| contact | knee crease and buttock–seat both self- and external contact | crease: none, seat: none | Newton particle self-contact in the crease; seat as a kinematic collider on the skin |
+| motion | inertia and damping: thigh flesh jiggles and settles in a fraction of a second | undamped (rings), or quasi-static | cited tissue damping; quasi-static solve for the comparison poses |
+
+**Closest published work to this whole plan.** Han, Teran et al., *A Neural Network Model for Efficient Musculoskeletal-driven
+Skin Deformation*, ACM TOG 43 (SIGGRAPH 2024), [doi:10.1145/3658135](https://doi.org/10.1145/3658135).
+- **What it does:**
+  - simulates the layers quasi-statically in order: muscle first, then an inner skin/fascia layer, then fat between the fascia
+    and the outer skin;
+  - estimates the activations by inverse dynamics, with a network predicting the moment arms;
+  - then trains a network that reproduces the skin from the skeleton pose and the activations.
+- That is our L1 → L2 → L3 structure, and it handles added weights (bodybuilding). **Read it first.** The UCLA dissertation by
+  Yushan Han has the details.
 
 ## 7. Risks and open questions
 

@@ -53,8 +53,10 @@ nm = [str(x) for x in np.load(os.path.join(FD, 'atlas_warp.npz'))['names']]
 BONES = {0: ['Hip bone.l'], 1: ['Femur.l'], 2: ['Tibia.l', 'Fibula.l', 'Patella.l']}
 bone_mesh = {}
 for sg, names in BONES.items():
-    fb = FB[np.isin(OB[FB[:, 0]], [nm.index(n) for n in names])]; u, inv = np.unique(fb, return_inverse=True)
-    bone_mesh[sg] = (V[u], inv.reshape(-1, 3).astype(np.int32))
+    fb = FB[np.isin(OB[FB[:, 0]], [nm.index(n) for n in names])]; u, inv = np.unique(fb, return_inverse=True); Fb = inv.reshape(-1, 3).astype(np.int32)
+    P_ = V[u].astype(np.float64); vol = np.einsum('ij,ij->i', P_[Fb[:, 0]], np.cross(P_[Fb[:, 1]], P_[Fb[:, 2]])).sum() / 6
+    if vol < 0: Fb = Fb[:, [0, 2, 1]].copy()          # the atlas bones are wound inward; inside tests and contact normals need outward winding
+    bone_mesh[sg] = (V[u], Fb)
 @wp.kernel
 def sdist(mid: wp.uint64, P: wp.array(dtype=wp.vec3), d: wp.array(dtype=float)):
     i = wp.tid(); r = wp.mesh_query_point_sign_winding_number(mid, P[i], 1.0)
