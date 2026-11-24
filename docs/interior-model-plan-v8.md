@@ -27,7 +27,7 @@
 | Face | 4 mm | 0.86 | 0.76 | about 66,000 |
 | Face | 8 mm | 0.75 | 0.60 | about 8,300 |
 | Face | 12 mm | 0.64 | 0.50 | about 2,500 |
-| Pelvis | 12 mm | 0.97 | 0.69 | about 300 |
+| Pelvis | 12 mm | 0.97 | 0.69 | about 8,600 |
 
 Decision: 8 mm tokens for the face now, 4 mm kept for a later detail pass (the eye lens survives only at 4 mm).
 
@@ -80,8 +80,9 @@ $$ \mathcal L = \mathbb E \,\big\| v_\theta(z_t, t \mid \text{shell}, \text{fact
 The transformer never has to jump from geometry to anatomy in one pass. It only learns how to move a noisy interior a little closer to a real one, inside the anatomy space, while reading the shell.
 
 Kept from v7 and the baseline:
-- **Partial reveal.** For a random share of people some interior tokens are given clean (their own time set to 1). This trains the later uses of v7: extend a region, edit a region, condition on a revealed part.
-- **Voxel-level terms near the end of the path.** For $t$ close to 1 the one-step estimate of $z_1$ is decoded on a random crop and scored with the baseline's weighted cross-entropy and Dice. This keeps the surface-and-bone emphasis and the charge for inhuman sizes. Whether it helps over the plain velocity loss is test F3.
+- **Partial reveal.** For a random share of people some interior tokens are given clean, with a flag marking them as given. The velocity loss is computed on the other tokens only, and at sampling the given tokens are held fixed at every step. This trains the later uses of v7: extend a region, edit a region, condition on a revealed part. Whether held codes keep the decoded anatomy intact at region borders is checked after decoding.
+- **Weighting.** The loss is averaged over the unknown tokens within each person first, then over people; how often each part is sampled is set explicitly.
+- **Voxel-level terms.** The one-step estimate $\hat z_1 = z_t + (1 - t)\, v_	heta$ is decoded on a random crop and scored with the baseline's weighted cross-entropy and Dice. Its gradient reaches the velocity scaled by $(1 - t)$, so it vanishes at the very end of the path; it is therefore applied over a broad range of $t$, not only near 1. This keeps the surface-and-bone emphasis and the charge for inhuman sizes. Whether it helps over the plain velocity loss is test F3.
 - **Fact dropout.** Facts are hidden at random so the model works without them and guidance strength can be chosen at sampling.
 - **Mirrored heads** as in the baseline.
 
@@ -111,7 +112,7 @@ Checked on 2026-11-24.
 | Label volumes, splits, frames | done (v7) | none |
 | Label autoencoders (face 8 mm, pelvis 12 mm) | done, frozen | none |
 | Per-person tokens, codes, shell features, loss weights, mirrored heads | job running; stored once as `m16_full/prep_v2_TF8` | none after it lands; shared with the baseline |
-| **Code normalisation** | missing | per part and per channel mean and spread over training people. Measured spread differs by part (face about 1.0, pelvis about 0.58; channels 0.28–1.28), and flow matching assumes unit scale. Minutes of CPU on the cache |
+| **Code normalisation** | missing | per part and per channel mean and spread over training people. Measured spread differs by part (face about 1.0, pelvis about 0.58; channels 0.28–1.28). Flow matching does not require unit variance; equal scales make the noise level mean the same thing in every channel and part. Minutes of CPU on the cache |
 | **Shell token list** | missing | pick the cells at or next to the surface from the cached distance features; no new computation on the scans |
 | **Facts: age and sex** | pelvis index has both; TotalSegmentator heads have them in the census table but not in the head index; HaN-Seg: not held | join the census table into the head index; mark HaN-Seg as unknown unless its release carries them (to check) |
 | **Facts: drawn-class list** | in the head index (`known`) | pass through as fact tokens; the pelvis set has one convention |
@@ -126,7 +127,7 @@ Checked on 2026-11-24.
 | Pelvis (2 people) | 0.85, 0.80 | 0.84, 0.79 | 0.81, 0.74 | 0.75, 0.67 | 0.70, 0.65 | 0.38, 0.28 |
 | Face (1 person) | 0.79 | 0.79 | 0.78 | 0.76 | 0.74 | 0.63 |
 
-The decoder tolerates errors of about a tenth of the spread with almost no loss, so the generator has to land that close. If it cannot, the fix is to fine-tune the decoder on slightly noisy codes (an hour on a small card), not to change the generator.
+The decoder tolerates independent errors of about a tenth of the spread with almost no loss. This measures the decoder's sensitivity only. It does not say a good draw must land within a tenth of the held-out person's code: a draw may be a different, equally plausible interior. If decoded draws look noisy, the fix is to fine-tune the decoder on slightly noisy codes (an hour on a small card), not to change the generator.
 
 ## 7. Tests, in order
 
@@ -158,3 +159,23 @@ After F1–F5 the v7 milestones continue with this generator: Context (17), Trun
 | 16 | Transformer | version 1 done and failed against the nearest-person baseline; version 2 is the one-shot baseline (F0) |
 | 16b | Flow | new: shell-conditioned flow matching (F1–F5); replaces the one-shot model as the generator |
 | 20 | Diffusion | merged into 16b |
+
+## 10. External review, 2026-11-24
+
+A reviewer read sections 1–9. Both papers it put forward exist and are the closest published work:
+- **Surf2CT** (Yoon et al., 2025, arXiv 2505.22511): flow matching from a body-surface signed distance and demographics to torso CT, coarse at 8 mm then refined by patches; 3,198 training CTs. The nearest precedent for this generator, and for a coarse pass followed by local detail.
+- **From Surface to Viscera** (Atici et al., MIDL 2026): one encoder reads the body surface, another a mean-shape point cloud of 20 organs, and the model predicts how that anatomy deforms. It starts from recognisable organs instead of noise.
+
+**Correction of this document.** Section 2 first gave the pelvis as about 300 tokens per person. The right figure is about 8,600 (12 mm tokens on 3 mm labels); a pelvis and a face at 8 mm are about the same length. The reviewer's point that one face outweighs a pelvis 28 times followed from that error. The remedy it proposed is adopted anyway (section 4.3, weighting).
+
+**Adopted** (already written into the sections above or the tests below):
+- loss on unknown tokens only and held tokens at sampling for partial reveal; voxel-level terms over a broad range of $t$; per-person averaging; the narrower reading of the noise test; unit variance is a convenience, not a requirement;
+- **shell-swap test (F6):** fixed random seed, shells exchanged between held-out people matched for part, coverage and facts. Bone centres, bone widths and skin-to-bone depths must follow the person whose shell was used. A memorised training body passes the plausibility score of section 5 and fails this;
+- the single exported draw is scored on its own, beside the majority over draws;
+- **hidden-structure test (replaces F4's pass condition):** take a structure that a source really draws, hide it under an artificial convention, keep its mask for scoring, then ask for the full class list. Recovery of the structure and damage to its neighbours are measured, which the original F4 could not do.
+
+**Open, for decision:**
+1. **Reference anatomy inside the flow model.** F0 against F1 changes two things at once: one-shot against flow, and with against without the nearest person. The reviewer proposes the full two-by-two on the pelvis (one-shot or flow, each with and without a retrieved person as a second reference, with the person and their mirror excluded from retrieval in training). The design of section 4 keeps the shell as the only reference. Running the fourth cell is the only way to know whether flow or the reference carries a result.
+2. **Face labels at the source.** A HaN-Seg head has "other lean tissue" where its brain is, and the frozen autoencoder has already turned that into the target code. Telling the generator the convention (section 4.5) does not teach it what a fully labelled head is. Two repairs, both before any face flow run: fill the missing classes in the data (the brain, trachea and neck vertebrae of the HaN-Seg CTs with the licensed TotalSegmentator tasks; the reverse direction needs a model trained on HaN-Seg's classes), and retrain the face autoencoder with a marginal loss so an ambiguous voxel accepts any class compatible with its source (Shi et al., marginal and exclusion loss for partially labelled data). The pelvis has one convention and is unaffected, which is one more reason to run the flow comparison on the pelvis first.
+
+The reviewer's earlier warning on v7, that class-weighted cross-entropy moves boundaries and inflates rare classes, matches what version 1 then did (structures at about 1.6 times their volume).
