@@ -16,7 +16,7 @@
 | How the shell enters | added to each interior token | its own tokens in the same sequence (the reference) |
 | Facts about the person | planned | a few tokens in the same sequence |
 | Output | the average where unsure | one sharp, plausible interior per draw |
-| Nearest training person | input in the v2 baseline | not used |
+| Nearest training person | input in the v2 baseline | not used in the main design; tested as a second reference (F1b) |
 
 ## 2. What milestones 15 and 16 measured
 
@@ -137,6 +137,7 @@ Each step is a smoke run on a small card first, then a cost table before any ful
 |---|---|---|---|
 | F0 | One-shot baseline, version 2, 20,000 steps | reference numbers exist | about $2, A10G-small (queued) |
 | F1 | Flow matching on the same tokens, shell and fact tokens in the sequence, plain velocity loss, same size and steps | beats F0 on plausibility and is no worse on Dice of the majority over draws | smoke under $1; full about $2–4 plus sampling |
+| F1b | Flow matching with a retrieved training person as a second reference beside the shell (pelvis first). The retrieved person's codes enter as their own token block; the flow runs on the difference between the target's codes and the retrieved person's. The target and their mirror are excluded from retrieval in training. Together with a one-shot run without the nearest person (F0b), this completes the two-by-two: one-shot or flow, each with and without a reference person | shows whether a gain comes from flow or from the reference; kept as the generator if it beats F1 on Dice, shell-swap and plausibility | about the same as F1; F0b about $2 |
 | F2 | Separate early weights per token kind against shared weights | kept only if it improves F1's scores | same as F1 |
 | F3 | Voxel-level terms near the end of the path | kept only if eyes, bone edges and sizes improve | same as F1 |
 | F4 | Unlabelled classes as facts | HaN-Seg test heads get a brain when the full class list is asked for | no extra training |
@@ -175,7 +176,7 @@ A reviewer read sections 1–9. Both papers it put forward exist and are the clo
 - **hidden-structure test (replaces F4's pass condition):** take a structure that a source really draws, hide it under an artificial convention, keep its mask for scoring, then ask for the full class list. Recovery of the structure and damage to its neighbours are measured, which the original F4 could not do.
 
 **Open, for decision:**
-1. **Reference anatomy inside the flow model.** F0 against F1 changes two things at once: one-shot against flow, and with against without the nearest person. The reviewer proposes the full two-by-two on the pelvis (one-shot or flow, each with and without a retrieved person as a second reference, with the person and their mirror excluded from retrieval in training). The design of section 4 keeps the shell as the only reference. Running the fourth cell is the only way to know whether flow or the reference carries a result.
+1. **Reference anatomy inside the flow model — decided 2026-11-24: run it.** F0 against F1 changes two things at once: one-shot against flow, and with against without the nearest person. The full two-by-two is run on the pelvis (tests F0, F0b, F1, F1b in section 7). The shell stays the primary reference of the design; F1b tests whether a retrieved person as a second reference adds to it.
 2. **Face labels at the source.** A HaN-Seg head has "other lean tissue" where its brain is, and the frozen autoencoder has already turned that into the target code. Telling the generator the convention (section 4.5) does not teach it what a fully labelled head is. Two repairs, both before any face flow run: fill the missing classes in the data (the brain, trachea and neck vertebrae of the HaN-Seg CTs with the licensed TotalSegmentator tasks; the reverse direction needs a model trained on HaN-Seg's classes), and retrain the face autoencoder with a marginal loss so an ambiguous voxel accepts any class compatible with its source (Shi et al., marginal and exclusion loss for partially labelled data). The pelvis has one convention and is unaffected, which is one more reason to run the flow comparison on the pelvis first.
 
 The reviewer's earlier warning on v7, that class-weighted cross-entropy moves boundaries and inflates rare classes, matches what version 1 then did (structures at about 1.6 times their volume).
