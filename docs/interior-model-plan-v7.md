@@ -1,5 +1,7 @@
 # Interior model: design v7 (tissue-label target)
 
+**Amended 2026-11-24 by [design v8](interior-model-plan-v8.md):** the generator of section 5.3 becomes shell-conditioned flow matching, after milestones 15 and 16 were run. Read v8 for the generator, its tests and the milestone 15/16 results; the rest of this document still applies.
+
 **Status, 2026-11-23 (revision c: A2 passed, see section 9.6; head MRI result 9b.6; architecture candidates 5.5; earlier revision b: sections 3.1, 4.1, 12).** This is a full rewrite. It replaces the learned part of v6.x ([interior-model-plan-v6.md](interior-model-plan-v6.md)), which stays as the record of the Gaussian and intensity-code experiments. The mechanics, clothing and rig sections of v5.1 ([interior-model-handout.md](interior-model-handout.md)) still apply where cited. Nothing here has been trained beyond the tests in section 9.
 
 **What changed and why.** The model's main target is no longer CT brightness. It is **which tissue occupies each point**: a label volume of bone, muscle, fat, organs and named structures. Brightness within one tissue turned out to be a small and largely unpredictable detail (section 9.4). Predicting it voxel by voxel made a deterministic model blur everything (section 9.3). A classifier that is unsure still puts each boundary at its most likely place, so the generated anatomy stays sharp, and the layers the rig needs (bone, muscle, fascia, fat, skin) are read straight off the labels.
