@@ -228,11 +228,16 @@ Each phase ends with its tests passing and a viewer. Costs are laptop time unles
 **Phase 1, the thigh compartment.**
 - All thigh muscles together, sliding contact, fascia lata, fat, skin; patella coupling.
 - Static solver mode.
-- *Pass:* T5 and T6. This repeats Test 5 properly: the drift problem must be gone.
+- *Pass:* T6 (knee flexion), and a passive hold under gravity with drift < 2 mm (the sag of Test 5 must be gone).
 
 **Phase 2, the buttock and the chair.**
 - Pelvis, gluteals, hip rotators and adductors added; chair contact on the skin.
 - *Pass:* T7.
+
+**Phase 2b, loaded vs hanging leg.**
+- The Phase 1 thigh with the Phase 2 hip, in the single-stance pose: the same bones, carrying the body vs hanging, with the
+  MyoSuite activations of each case.
+- *Pass:* T5. This repeats handoff Test 5 with the container in place.
 
 **Phase 3, dynamics and the whole leg.**
 - Shank and foot compartments; damping; the sit clip.
@@ -262,8 +267,8 @@ Each phase ends with its tests passing and a viewer. Costs are laptop time unles
 
 ## 9. Decisions for the user
 
-1. **Scope of the first proof:** the left thigh (Phase 1) as the first full compartment, then the buttock and chair. Or the
-   buttock and chair first, since sitting is the motivating clip.
+1. **Scope of the first proof — decided 2026-11-24:** the thigh first (Phase 1), then the buttock on the chair (Phase 2), then
+   the loaded vs hanging leg (Phase 2b).
 2. **Solver:** stay with Newton VBD alone, or run the Phase 0 bake-off against libuipc (an install, needs your OK).
 3. **Where heavy runs go:** laptop for Phases 0–2, HF Jobs from Phase 3 (with a cost table each time).
 4. **Stop the one-off experiments** until Phase 0 is done, except anything Phase 0 needs.
