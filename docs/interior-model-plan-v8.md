@@ -143,6 +143,8 @@ Each step is a smoke run on a small card first, then a cost table before any ful
 | F4 | Unlabelled classes as facts | HaN-Seg test heads get a brain when the full class list is asked for | no extra training |
 | F5 | Sampling steps and guidance strength | chosen on validation people by section 5 | sampling only |
 
+**Order (user decision, 2026-11-24).** F1b and any other use of a retrieved person are a last backup, not a next step. The current reading is that the limit is the amount of training data and that flow matching has not yet been judged at full training. So: judge F1 at full training on pelvis and face together (every run includes the face), then more data; retrieval only if those fall short.
+
 After F1–F5 the v7 milestones continue with this generator: Context (17), Trunk (18), Seams (19), Rig (21).
 
 ## 8. Risks
