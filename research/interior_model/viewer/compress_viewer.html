@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interior Token Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f4f5f3; --panel: #ffffff; --ink: #1d211f; --mute: #66706b; --line: #d9ddd9; --accent: #0f7a64; --accent-ink: #ffffff;
+  --scan: #0b0d0c; --row: #eef1ee; --good: #0f7a64; --mid: #a87b12; --bad: #b3372b; --hl: #e9f4f0;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121513; --panel: #1a1e1c; --ink: #e5e9e6; --mute: #93a09a; --line: #2c3330; --accent: #3fbf9c; --accent-ink: #08110e;
+  --scan: #050606; --row: #212724; --good: #4cc9a5; --mid: #d9a93a; --bad: #e7695b; --hl: #1f3029; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121513; --panel: #1a1e1c; --ink: #e5e9e6; --mute: #93a09a; --line: #2c3330; --accent: #3fbf9c; --accent-ink: #08110e;
+  --scan: #050606; --row: #212724; --good: #4cc9a5; --mid: #d9a93a; --bad: #e7695b; --hl: #1f3029; color-scheme: dark }
+* { box-sizing: border-box }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+  padding-block: 16px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+h1 { font-size: 20px; margin: 0; font-weight: 600; text-wrap: balance }
+.sub { color: var(--mute); margin: 2px 0 0; max-width: 75ch }
+.mono, td.n, .tag { font-family: "IBM Plex Mono", ui-monospace, monospace }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 14px }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel) }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 6px 11px; font: inherit; cursor: pointer; border-right: 1px solid var(--line) }
+.seg button:last-child { border-right: 0 }
+.seg button.on { background: var(--accent); color: var(--accent-ink) }
+.seg button small { opacity: .75; font-family: "IBM Plex Mono", monospace; margin-left: 4px }
+select, input[type=search] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink) }
+label.lab { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin-right: 4px }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start }
+@media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr) } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0 }
+.panes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px }
+@media (max-width: 640px) { .panes { grid-template-columns: minmax(0, 1fr) } }
+.pane { min-width: 0 }
+.pane h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); font-weight: 500; display: flex; justify-content: space-between }
+canvas { width: 100%; height: auto; image-rendering: pixelated; background: var(--scan); border-radius: 6px; display: block; cursor: crosshair }
+.slicebar { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap }
+.slicebar input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent) }
+.readout { margin-top: 10px; min-height: 2.9em; font-size: 13px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px }
+.readout b { font-weight: 500; color: var(--mute) }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(127,127,127,.4) }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); margin-top: 8px }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px }
+th { text-align: left; font-weight: 500; color: var(--mute); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; position: sticky; top: 0; background: var(--panel) }
+td { padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap }
+td.n { text-align: right }
+td.name { white-space: normal; min-width: 0 }
+tr.cls { cursor: pointer }
+tr.cls:hover { background: var(--row) }
+tr.cls.sel { background: var(--hl) }
+.tablewrap { max-height: 70vh; overflow: auto; margin-top: 8px }
+.d-good { color: var(--good) } .d-mid { color: var(--mid) } .d-bad { color: var(--bad) }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-top: 10px }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px }
+.stat .k { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--mute) }
+.stat .v { font-family: "IBM Plex Mono", monospace; font-size: 17px }
+.note { color: var(--mute); font-size: 12px; margin-top: 8px; max-width: 70ch }
+.loading { opacity: .45; transition: opacity .2s }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Interior token check — truth vs autoencoder reconstruction</h1>
+    <p class="sub">Milestone 15: how much anatomy survives being squeezed into tokens. Each held-out person's labels go in, tokens come out, labels are rebuilt. The shell is not used here; this is the ceiling the transformer can reach.</p>
+  </div>
+  <div class="controls">
+    <span><label class="lab">Part</label><span class="seg" id="partSeg"></span></span>
+    <span><label class="lab">Person</label><select id="person"></select></span>
+    <span><label class="lab">Token</label><span class="seg" id="varSeg"></span></span>
+    <span><label class="lab">Plane</label><span class="seg" id="planeSeg"></span></span>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="card">
+    <div class="panes" id="panes">
+      <div class="pane"><h3><span>Truth</span><span class="mono" id="hT"></span></h3><canvas id="cT"></canvas></div>
+      <div class="pane"><h3><span>Reconstruction</span><span class="mono" id="hP"></span></h3><canvas id="cP"></canvas></div>
+      <div class="pane"><h3><span>Disagreement</span><span class="mono" id="hE"></span></h3><canvas id="cE"></canvas></div>
+    </div>
+    <div class="slicebar">
+      <label class="lab" for="slice">Slice</label>
+      <input type="range" id="slice" min="0" max="0" value="0">
+      <span class="mono" id="sliceTxt"></span>
+    </div>
+    <div class="legend" id="errLegend"></div>
+    <div class="readout" id="readout"><b>Hover</b><span>a slice to read the truth and reconstructed class at that point. Click a class on the right to isolate it; scroll a slice to move through the volume.</span></div>
+  </div>
+
+  <div class="card">
+    <div class="summary" id="summary"></div>
+    <div style="display:flex; gap:8px; margin-top:10px; align-items:center">
+      <input type="search" id="filter" placeholder="Filter structures" style="flex:1; min-width:0">
+      <button class="seg" id="clearSel" style="padding:6px 10px; font:inherit; cursor:pointer; color:var(--ink)">All</button>
+    </div>
+    <div class="tablewrap"><table id="tbl"></table></div>
+    <p class="note">Dice for this person, per structure, for every token size. Thickness = 2 × volume ÷ surface, in mm. Click a row to isolate the structure and jump to its centre.</p>
+  </div>
+</div>
+
+<script>
+const S = { meta: null, part: 'face', person: null, variant: null, plane: 'axial', slice: {}, sel: null, cache: new Map(), vols: {}, sort: 'thickness_mm', sortDir: 1, filter: '' };
+const PLANES = { axial: 'Axial', coronal: 'Coronal', sagittal: 'Sagittal' };
+const $ = id => document.getElementById(id);
+const BASIC_COL = { 0: [0, 0, 0], 1: [214, 186, 92], 2: [176, 150, 70], 3: [181, 120, 120], 4: [40, 60, 110], 5: [205, 205, 200], 6: [130, 130, 150] };
+const PELVIS_COL = { outside: [0,0,0], subcut_fat: [214,186,92], torso_fat: [176,150,70], inter_fat: [230,210,140], muscle_other: [181,90,90], lean_other: [181,120,120], gas: [40,60,110], dense: [205,205,200], organ: [120,140,120] };
+function hsl(h, s, l) { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h * 12) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))) }; return [f(0), f(8), f(4)] }
+let COL = [];
+function buildColours() {
+  const cls = S.meta.parts[S.part].classes; COL = new Array(256).fill([90, 90, 90]);
+  for (const [k, name] of Object.entries(cls)) {
+    const i = +k;
+    if (S.part === 'face' && i in BASIC_COL) COL[i] = BASIC_COL[i];
+    else if (S.part === 'pelvis' && name in PELVIS_COL) COL[i] = PELVIS_COL[name];
+    else COL[i] = hsl((i * 0.61803398875) % 1, 0.72, 0.56);
+  }
+}
+const cname = k => k === 255 ? 'unknown (outside the scan)' : (S.meta.parts[S.part].classes[k] ?? ('class ' + k));
+const dclass = d => d == null ? '' : d >= 0.8 ? 'd-good' : d >= 0.5 ? 'd-mid' : 'd-bad';
+
+async function vol(name) {
+  const key = `${S.part}/${S.person}/${name}`;
+  if (!S.cache.has(key)) {
+    const p = fetch(`${key}.bin`).then(r => { if (!r.ok) throw new Error(key); return r.arrayBuffer() }).then(b => new Uint8Array(b));
+    S.cache.set(key, p);
+    if (S.cache.size > 24) S.cache.delete(S.cache.keys().next().value);
+  }
+  return S.cache.get(key);
+}
+function dims() { return S.meta.parts[S.part].people[S.person].shape }
+function planeSize() { const [X, Y, Z] = dims(); return S.plane === 'axial' ? [X, Y, Z] : S.plane === 'coronal' ? [X, Z, Y] : [Y, Z, X] }
+// screen (c, r) -> voxel index. Axial: x right, anterior up. Coronal: x right, superior up. Sagittal: anterior left, superior up.
+function vox(c, r, s) {
+  const [X, Y, Z] = dims(); let x, y, z;
+  if (S.plane === 'axial') { x = c; y = Y - 1 - r; z = s } else if (S.plane === 'coronal') { x = c; z = Z - 1 - r; y = s } else { y = Y - 1 - c; z = Z - 1 - r; x = s }
+  return [x, y, z, (x * Y + y) * Z + z];
+}
+function draw() {
+  const T = S.vols.truth, P = S.vols.pred; if (!T || !P) return;
+  const [W, H, N] = planeSize(), s = S.slice[S.plane];
+  const imgs = ['cT', 'cP', 'cE'].map(id => { const c = $(id); c.width = W; c.height = H; return [c, c.getContext('2d').createImageData(W, H)] });
+  const sel = S.sel; let wrong = 0, body = 0;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const i = vox(c, r, s)[3], t = T[i], p = P[i], o = (r * W + c) * 4;
+    const put = (img, rgb, a = 255) => { img.data[o] = rgb[0]; img.data[o + 1] = rgb[1]; img.data[o + 2] = rgb[2]; img.data[o + 3] = a };
+    if (t === 255) { const hatch = ((r + c) & 7) < 2 ? [70, 70, 70] : [28, 28, 28]; put(imgs[0][1], hatch); put(imgs[1][1], hatch); put(imgs[2][1], hatch); continue }
+    const dim = k => sel == null || k === sel ? COL[k] : COL[k].map(v => Math.round(v * 0.22));
+    put(imgs[0][1], dim(t)); put(imgs[1][1], dim(p));
+    let e;
+    if (sel != null) e = t === sel && p === sel ? [235, 235, 235] : t === sel ? [255, 150, 40] : p === sel ? [225, 70, 220] : (t ? [38, 40, 39] : [0, 0, 0]);
+    else e = t === p ? (t ? [52, 56, 54] : [0, 0, 0]) : [235, 70, 60];
+    if (t) { body++; if (t !== p) wrong++ }
+    put(imgs[2][1], e);
+  }
+  imgs.forEach(([c, img]) => c.getContext('2d').putImageData(img, 0, 0));
+  $('sliceTxt').textContent = `${s + 1} / ${N}  ·  ${((s + 0.5) * S.meta.parts[S.part].voxel_mm).toFixed(0)} mm`;
+  $('hE').textContent = body ? `${(100 * wrong / body).toFixed(1)}% of body` : '';
+  $('hT').textContent = PLANES[S.plane].toLowerCase(); $('hP').textContent = `${S.meta.parts[S.part].token_mm[S.variant]} mm tokens`;
+  $('errLegend').innerHTML = sel == null
+    ? `<span><i class="sw" style="background:#eb463c"></i>reconstruction disagrees with truth</span><span><i class="sw" style="background:#343836"></i>agrees</span><span><i class="sw" style="background:repeating-linear-gradient(45deg,#464646 0 2px,#1c1c1c 2px 8px)"></i>outside the scan (unknown)</span>`
+    : `<span><i class="sw" style="background:#ebebeb"></i>${cname(sel)} — found</span><span><i class="sw" style="background:#ff9628"></i>missed</span><span><i class="sw" style="background:#e146dc"></i>extra (not in truth)</span>`;
+}
+function setSliceRange() {
+  const [, , N] = planeSize(), el = $('slice'); el.max = N - 1;
+  if (S.slice[S.plane] == null || S.slice[S.plane] >= N) S.slice[S.plane] = Math.floor(N / 2);
+  el.value = S.slice[S.plane];
+}
+function segment(el, items, current, onPick) {
+  el.innerHTML = ''; for (const [val, html] of items) { const b = document.createElement('button'); b.innerHTML = html; if (val === current) b.className = 'on'; b.onclick = () => onPick(val); el.appendChild(b) }
+}
+function renderControls() {
+  const parts = S.meta.parts, P = parts[S.part];
+  segment($('partSeg'), Object.keys(parts).map(k => [k, k[0].toUpperCase() + k.slice(1)]), S.part, v => { if (v !== S.part) { S.part = v; S.person = null; S.variant = null; S.sel = null; S.slice = {}; load() } });
+  segment($('varSeg'), P.variants.map(v => [v, `${P.token_mm[v]} mm<small>${P.overall[v].median_dice.toFixed(2)}</small>`]), S.variant, v => { S.variant = v; load() });
+  segment($('planeSeg'), Object.entries(PLANES), S.plane, v => { S.plane = v; renderControls(); setSliceRange(); draw() });
+  const ps = $('person'); ps.innerHTML = Object.keys(P.people).map(c => `<option${c === S.person ? ' selected' : ''}>${c}</option>`).join('');
+}
+function renderSummary() {
+  const P = S.meta.parts[S.part], o = P.overall[S.variant];
+  const per = Object.values(P.people[S.person].dice).map(r => r[S.variant]).filter(v => v != null).sort((a, b) => a - b);
+  const med = per.length ? per[Math.floor(per.length / 2)] : null;
+  const bins = Object.entries(o.by_thickness).filter(([, v]) => v[0] != null);
+  $('summary').innerHTML = `<div class="stat"><div class="k">This person</div><div class="v ${dclass(med)}">${med?.toFixed(2) ?? '–'}</div></div>`
+    + `<div class="stat"><div class="k">All test</div><div class="v ${dclass(o.median_dice)}">${o.median_dice.toFixed(2)}</div></div>`
+    + bins.map(([k, v]) => `<div class="stat"><div class="k">${k.replace('12-1e+09', '>12')}</div><div class="v ${dclass(v[0])}">${v[0].toFixed(2)}</div></div>`).join('');
+}
+function renderTable() {
+  const P = S.meta.parts[S.part], rows = Object.entries(P.people[S.person].dice).map(([k, r]) => ({ k: +k, name: cname(+k), ...r }));
+  const f = S.filter.toLowerCase(), key = S.sort, dir = S.sortDir;
+  const list = rows.filter(r => !f || r.name.toLowerCase().includes(f)).sort((a, b) => { const x = a[key] ?? -1, y = b[key] ?? -1; return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir });
+  const head = [['name', 'Structure'], ['thickness_mm', 'mm'], ...P.variants.map(v => [v, P.token_mm[v] + ' mm'])];
+  $('tbl').innerHTML = '<thead><tr>' + head.map(([k, t]) => `<th data-k="${k}">${t}${k === key ? (dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('') + '</tr></thead><tbody>'
+    + list.map(r => `<tr class="cls${r.k === S.sel ? ' sel' : ''}" data-k="${r.k}"><td class="name"><i class="sw" style="background:rgb(${COL[r.k]})"></i>${r.name}</td><td class="n">${r.thickness_mm}</td>`
+      + P.variants.map(v => `<td class="n ${dclass(r[v])}">${r[v]?.toFixed(2) ?? '–'}</td>`).join('') + '</tr>').join('') + '</tbody>';
+  $('tbl').querySelectorAll('th').forEach(th => th.onclick = () => { const k = th.dataset.k; S.sortDir = S.sort === k ? -S.sortDir : (k === 'name' || k === 'thickness_mm' ? 1 : 1); S.sort = k; renderTable() });
+  $('tbl').querySelectorAll('tr.cls').forEach(tr => tr.onclick = () => select(+tr.dataset.k));
+}
+function select(k) {
+  S.sel = S.sel === k ? null : k;
+  if (S.sel != null) { const cen = S.meta.parts[S.part].people[S.person].dice[k].centre; S.slice = { axial: cen[2], coronal: cen[1], sagittal: cen[0] }; setSliceRange() }
+  renderTable(); draw();
+}
+async function load() {
+  const P = S.meta.parts[S.part];
+  S.person ??= Object.keys(P.people)[0]; S.variant ??= P.variants[0];
+  buildColours(); renderControls(); renderSummary(); renderTable(); setSliceRange();
+  document.querySelector('.panes').classList.add('loading');
+  const [t, p] = await Promise.all([vol('truth'), vol(S.variant)]);
+  S.vols = { truth: t, pred: p }; document.querySelector('.panes').classList.remove('loading'); draw();
+}
+function hover(ev) {
+  if (!S.vols.truth) return;
+  const c = ev.currentTarget, rect = c.getBoundingClientRect(), [W, H] = planeSize();
+  const cc = Math.floor((ev.clientX - rect.left) / rect.width * W), rr = Math.floor((ev.clientY - rect.top) / rect.height * H);
+  if (cc < 0 || rr < 0 || cc >= W || rr >= H) return;
+  const [x, y, z, i] = vox(cc, rr, S.slice[S.plane]), t = S.vols.truth[i], p = S.vols.pred[i], mm = S.meta.parts[S.part].voxel_mm;
+  $('readout').innerHTML = `<b>Truth</b><span><i class="sw" style="background:rgb(${COL[t] ?? '60,60,60'})"></i>${cname(t)}</span><b>Rebuilt</b><span><i class="sw" style="background:rgb(${COL[p] ?? '60,60,60'})"></i>${cname(p)} ${t === p ? '' : '<span class="d-bad">· differs</span>'}</span><b>Voxel</b><span class="mono">${x}, ${y}, ${z}  (${(x * mm).toFixed(0)}, ${(y * mm).toFixed(0)}, ${(z * mm).toFixed(0)} mm in crop)</span>`;
+  ev.currentTarget._last = i;
+}
+['cT', 'cP', 'cE'].forEach(id => {
+  const c = $(id);
+  c.addEventListener('mousemove', hover);
+  c.addEventListener('click', () => { if (c._last == null) return; const t = S.vols.truth[c._last]; if (t && t !== 255) select(t) });
+  c.addEventListener('wheel', ev => { ev.preventDefault(); const el = $('slice'); S.slice[S.plane] = Math.max(0, Math.min(+el.max, S.slice[S.plane] + (ev.deltaY > 0 ? -1 : 1))); el.value = S.slice[S.plane]; draw() }, { passive: false });
+});
+$('slice').oninput = e => { S.slice[S.plane] = +e.target.value; draw() };
+$('person').onchange = e => { S.person = e.target.value; S.sel = null; S.slice = {}; load() };
+$('filter').oninput = e => { S.filter = e.target.value; renderTable() };
+$('clearSel').onclick = () => { S.sel = null; renderTable(); draw() };
+document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return; if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); const el = $('slice'); S.slice[S.plane] = Math.max(0, Math.min(+el.max, S.slice[S.plane] + (e.key === 'ArrowUp' ? 1 : -1))); el.value = S.slice[S.plane]; draw() } });
+fetch('meta.json').then(r => r.json()).then(m => { S.meta = m; load() });
+</script>
+</body>
+</html>
