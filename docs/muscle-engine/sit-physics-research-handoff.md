@@ -220,7 +220,7 @@ Before optimising, profile what the GTX 1650 spends its time on: tissue solve, c
   It now takes 241 s.
 - **Next:** stop pinning nodes to two bones inside one tet near the joints, and turn self-contact on for the knee crease.
 
-![old run vs fixed winding](img/flesh_winding.png)
+![old run vs fixed winding](../img/flesh_winding.png)
 
 **Test 2. Straight-block contraction** (`muscle_block_test.py`). The block has the rectus's own length (263 mm) and belly area
 (118 mm²), with the same material, solver and active strain as the tube.
@@ -251,7 +251,7 @@ Before optimising, profile what the GTX 1650 spends its time on: tissue solve, c
      zeroing is not enough.
   4. Self-contact must be on for slender muscles.
 
-![dynamic vs quasi-static](img/muscle_static.png)
+![dynamic vs quasi-static](../img/muscle_static.png)
 
 **Test 3. Why the knee looks wrong** (`knee_diagnose.py`, fixed flesh run, every clip frame).
 - **The kneecap.**
@@ -269,7 +269,7 @@ Before optimising, profile what the GTX 1650 spends its time on: tissue solve, c
   - **Fix:** pin only the nodes on the bone surfaces (an attachment, not a volume rule). Leave the joint flesh free, with
     self-contact in the crease.
 
-![knee diagnosis](img/knee_curves.png)
+![knee diagnosis](../img/knee_curves.png)
 
 **Test 4. The atlas bones are wound inward** (`bone_penetration_recheck.py`).
 - Every Z-Anatomy bone mesh has negative signed volume. Warp's winding-number inside test then calls every point "outside", so the
@@ -279,6 +279,46 @@ Before optimising, profile what the GTX 1650 spends its time on: tissue solve, c
   construction.
 - `newton_muscle_active.py` now reorients the bones before building contact. This matters for Newton's contact normals too. Any
   future use of atlas bones must reorient them first.
+
+**Test 5. Same pose, loaded vs hanging** (`myo_single_leg.py`, `stance_runs.sh`, `stance_web_export.py`, `stance_picture.py`).
+- **Question.** The left leg is held in one pose: ARDY sit clip frame 56, knee about 20°. In the first case it carries the whole
+  body (left foot 0.98 bw). In the second it hangs while the right foot carries everything. Does the thigh take a different shape?
+- **Activations** come from MyoSuite static optimisation in that pose. Only one foot's contact geoms are enabled per case.
+  - Loaded: vaslat 0.217, vasmed 0.077, semimem 0.045, bflh 0.033, semiten 0.015, recfem 0.
+  - Hanging: recfem 0.058, sartorius 0.022, the rest 0.
+  - The centre of mass is not over either foot in this pose, so the root reserve carries a moment: 11.6 loaded, −4.0 hanging.
+    A real person would shift their weight over the stance foot instead.
+- **New active model, `ACTIVE=stiff`.** Each passive tet is duplicated as an active tet whose rest shape is the fibre shortened
+  by g_max. Its shear modulus is a·μ_A, with μ_A = σ_max / ((1−g_max)^−2 − 1) = 257 kPa, where σ_max = 0.3 MPa (Blemker 2005)
+  and g_max = 0.321. So the muscle is **stiffer in proportion to its activation**, and its force falls to zero at fibre stretch
+  1−g_max.
+- **Runs.** 7 thigh muscles × 2 cases, each muscle alone with its bones, gravity, bone contact and a quasi-static 3 s hold.
+  Sartorius was left out (its tet mesh is 22.6 cm³ against 14.0 cm³ of surface volume). About 10 min per run on the 1650.
+- **Results** (end of the hold; belly = belly thickness / rest):
+
+  | muscle | a hang / load | belly hang / load | mid-belly difference |
+  |---|---|---|---|
+  | vastus lateralis | 0 / 0.217 | 0.72 / 0.78 | 19 mm |
+  | vastus medialis | 0 / 0.077 | 0.79 / 0.84 | 7 mm |
+  | rectus femoris | 0.058 / 0 | 1.03 / 1.00 | 31 mm |
+  | biceps femoris long head | 0 / 0.033 | 1.11 / 1.02 | 18 mm |
+  | semitendinosus | 0 / 0.015 | 0.91 / 0.93 | 31 mm |
+  | semimembranosus | 0 / 0.045 | 1.03 / 0.98 | 17 mm |
+  | gracilis | 0 / 0 | identical | 0 |
+
+  ![loaded vs hanging](../img/stance_loaded_vs_hanging.png)
+- **What it shows.**
+  - The vasti wrap the femur, so they move only about 9 mm during the hold, and **the comparison is clean for them.** Loaded, the
+    vastus lateralis is thicker (×0.78 against ×0.72) and lifts 7 mm, where the hanging one sags 4 mm. That is the direction a
+    real loaded thigh goes.
+  - **The two-joint muscles are not trustworthy here.** Rectus, hamstrings and gracilis slide 40–70 mm down the thigh during the
+    hold whatever their activation: G = 500 Pa with nothing around them. A small activation only slows the slide (rectus 44 →
+    29 mm drop), so their 17–31 mm "differences" are mostly sag, not shape.
+  - **This is the same lesson as the knee:** a muscle needs its container (neighbouring muscles, fascia, fat and skin) before
+    load-dependent shape can be measured. The activation-stiffness model itself behaves as intended.
+- Contact is weaker than the active stiffness: up to 2.9 mm of penetration (biceps femoris), and 4.9 mm at a = 1 in the smoke
+  test.
+- Interactive viewer: https://claude.ai/artifact/PvJsizqiXMEvnfSLVXAFve (private).
 
 **What Fleshy is, and what it is not.** [Fleshy](https://fleshy.pages.dev/) is a paid Blender add-on: a GPL interface with a
 compiled closed core, Windows only, needing an all-quad mesh with Subdivision Surface.

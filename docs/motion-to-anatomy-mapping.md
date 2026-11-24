@@ -184,7 +184,7 @@ What fits a GTX 1650 is **kinematic**: pose the skeleton frame by frame, then re
 > never bent: the numbers below describe pinned nodes moving past nodes that stood still.
 >
 > `elf_leg_flesh.py` now reorders the tets and checks the tet count. Corrected run: 241 s, inverted tets ≤ 1.4 %, volume
-> 0.974–1.005, skin flips ≤ 5.9 % (knee crease, hip). See `docs/sit-physics-research-handoff.md` §6, test 1.
+> 0.974–1.005, skin flips ≤ 5.9 % (knee crease, hip). See `docs/muscle-engine/sit-physics-research-handoff.md` §6, test 1.
 
 **Script:** `research/rig_stage/elf_leg_flesh.py`. Figure: `research/rig_stage/elf_leg_flesh_figure.py`.
 - **Skin:** the leg's own skin piece, 49k vertices.
