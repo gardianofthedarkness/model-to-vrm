@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Interior Token Check 3D</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root { --bg: #0f1211; --panel: rgba(24,28,26,.92); --ink: #e5e9e6; --mute: #93a09a; --line: #2c3330; --accent: #3fbf9c; --accent-ink: #08110e;
+  --good: #4cc9a5; --mid: #d9a93a; --bad: #e7695b; color-scheme: dark }
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 "IBM Plex Sans", system-ui, sans-serif; overflow: hidden }
+#stage { position: fixed; inset: 0 }
+canvas { display: block; touch-action: none }
+.bar { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px)); pointer-events: none }
+.bar > * { pointer-events: auto }
+h1 { font-size: 14px; font-weight: 600; margin: 0 8px 0 0 }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel) }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 6px 10px; font: inherit; cursor: pointer; border-right: 1px solid var(--line) }
+.seg button:last-child { border-right: 0 }
+.seg button.on { background: var(--accent); color: var(--accent-ink) }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer }
+.lab { position: fixed; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); pointer-events: none; font-family: "IBM Plex Mono", monospace }
+#side { position: fixed; right: max(12px, env(safe-area-inset-right, 0px)); top: 58px; bottom: 12px; width: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  display: flex; flex-direction: column; min-height: 0 }
+#side.hidden { display: none }
+#side header { padding: 10px; border-bottom: 1px solid var(--line); display: grid; gap: 8px }
+#side input[type=search] { width: 100%; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--ink) }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.row input[type=range] { flex: 1; accent-color: var(--accent) }
+#list { overflow: auto; flex: 1; min-height: 0 }
+.it { display: grid; grid-template-columns: 18px 12px minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 4px 10px; cursor: pointer; border-bottom: 1px solid rgba(127,127,127,.12) }
+.it:hover { background: rgba(127,127,127,.08) } .it.sel { background: rgba(63,191,156,.16) }
+.it .sw { width: 12px; height: 12px; border-radius: 3px }
+.it .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.it .d { font-family: "IBM Plex Mono", monospace; font-size: 12px }
+.d-good { color: var(--good) } .d-mid { color: var(--mid) } .d-bad { color: var(--bad) }
+#info { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; max-width: min(460px, calc(100vw - 24px)); font-size: 12.5px }
+#info b { font-weight: 500 }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font-family: "IBM Plex Mono", monospace; color: var(--mute) }
+@media (max-width: 760px) {
+  #side { top: auto; left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); width: auto; height: 42vh; bottom: max(8px, env(safe-area-inset-bottom, 0px)) }
+  #info { bottom: calc(42vh + 16px) }
+  h1 { display: none }
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="bar">
+  <h1>Interior token check · 3D</h1>
+  <span class="seg" id="srcSeg"></span>
+  <button class="btn" id="cmp">Compare with truth</button>
+  <button class="btn" id="toggleSide">Structures</button>
+</div>
+<div class="lab" id="labL"></div><div class="lab" id="labR"></div>
+<aside id="side">
+  <header>
+    <input type="search" id="filter" placeholder="Filter structures">
+    <div class="row"><button class="btn" id="all">All</button><button class="btn" id="none">None</button><button class="btn" id="worst">Worst 10</button></div>
+    <div class="row"><span style="color:var(--mute)">Skin</span><input type="range" id="skin" min="0" max="0.6" step="0.02" value="0.12"></div>
+  </header>
+  <div id="list"></div>
+</aside>
+<div id="info">Drag to turn, pinch or scroll to zoom. Tap a structure to name it. The list's Dice is for this person at the chosen token size.</div>
+<div id="loading">loading surfaces…</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const S = { src: 't4', compare: true, vis: new Set(), sel: null, filter: '' };
+let H, BIN, groups = {}, mats = {}, skinMats = [];
+const hsl = (h, s, l) => new THREE.Color().setHSL(h, s, l);
+const colour = k => hsl((k * 0.61803398875) % 1, 0.72, 0.56);
+const dcls = d => d == null ? '' : d >= .8 ? 'd-good' : d >= .5 ? 'd-mid' : 'd-bad';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); $('stage').appendChild(renderer.domElement);
+renderer.setScissorTest(true);
+const camera = new THREE.PerspectiveCamera(35, 1, 1, 5000); camera.position.set(0, 40, 520);
+const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+const scenes = { L: new THREE.Scene(), R: new THREE.Scene() };
+for (const sc of Object.values(scenes)) sc.add(new THREE.HemisphereLight(0xffffff, 0x334433, 0.75));
+const lightL = new THREE.DirectionalLight(0xffffff, 0.7), lightR = new THREE.DirectionalLight(0xffffff, 0.7); scenes.L.add(lightL); scenes.R.add(lightR);
+// frame axes (x left->right of the person, y anterior, z superior) -> three (-x, z, y): the face looks at the default camera
+const root = { L: new THREE.Group(), R: new THREE.Group() };
+for (const k of ['L', 'R']) { root[k].matrixAutoUpdate = false; root[k].matrix.set(-1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1); scenes[k].add(root[k]) }
+
+function geom(o) {
+  const p16 = new Int16Array(BIN, o.pos, o.nv * 3), pos = new Float32Array(o.nv * 3);
+  for (let i = 0; i < pos.length; i++) pos[i] = p16[i] * 0.25;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(new Uint32Array(BIN, o.idx, o.nf * 3), 1)); g.computeVertexNormals(); return g;
+}
+function material(k) {
+  if (!mats[k]) mats[k] = new THREE.MeshStandardMaterial({ color: colour(+k), roughness: .6, metalness: 0, flatShading: true, transparent: true, opacity: 1 });
+  return mats[k];
+}
+function build(src) {
+  if (groups[src]) return groups[src];
+  const g = new THREE.Group(), meshes = {};
+  for (const [k, o] of Object.entries(H.sources[src])) {
+    let m;
+    if (k === 'body') { const sm = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, transparent: true, opacity: +$('skin').value, depthWrite: false, side: THREE.DoubleSide, roughness: .9 }); skinMats.push(sm); m = new THREE.Mesh(geom(o), sm); m.renderOrder = 10 }
+    else { m = new THREE.Mesh(geom(o), material(k)); m.userData.k = k }
+    meshes[k] = m; g.add(m);
+  }
+  g.userData.meshes = meshes; groups[src] = g; return g;
+}
+function place() {
+  for (const k of ['L', 'R']) while (root[k].children.length) root[k].remove(root[k].children[0]);
+  if (S.compare) { root.L.add(build('truth')); root.R.add(build(S.src)) } else root.L.add(build(S.src));
+  applyVis(); resize();
+}
+function applyVis() {
+  for (const g of Object.values(groups)) for (const [k, m] of Object.entries(g.userData.meshes)) {
+    if (k === 'body') { m.visible = +$('skin').value > 0; continue }
+    m.visible = S.vis.has(k);
+  }
+  for (const [k, mt] of Object.entries(mats)) { const dim = S.sel != null && k !== S.sel; mt.opacity = dim ? 0.12 : 1; mt.depthWrite = !dim }
+}
+function views() {
+  const side = innerWidth >= 760 && !$('side').classList.contains('hidden'), w = innerWidth - (side ? 324 : 0), h = innerHeight, portrait = h > w;
+  if (!S.compare) return [{ k: 'L', x: 0, y: 0, w, h }];
+  return portrait ? [{ k: 'L', x: 0, y: h / 2, w, h: h / 2 }, { k: 'R', x: 0, y: 0, w, h: h / 2 }] : [{ k: 'L', x: 0, y: 0, w: w / 2, h }, { k: 'R', x: w / 2, y: 0, w: w / 2, h }];
+}
+function resize() {
+  renderer.setSize(innerWidth, innerHeight); renderer.setScissor(0, 0, innerWidth, innerHeight); renderer.setClearColor(0x0f1211); renderer.clear(); const v = views()[0]; camera.aspect = v.w / v.h; camera.updateProjectionMatrix();
+  const tm = H.token_mm[S.src] + ' mm tokens', vs = views();
+  const lab = (el, v, txt) => { el.style.display = v ? '' : 'none'; if (!v) return; el.textContent = txt; el.style.left = (v.x + 14) + 'px'; el.style.top = (innerHeight - v.y - v.h + 60) + 'px' };
+  lab($('labL'), vs[0], S.compare ? 'truth' : (S.src === 'truth' ? 'truth' : 'reconstruction · ' + tm)); lab($('labR'), vs[1], 'reconstruction · ' + tm);
+}
+function loop() {
+  requestAnimationFrame(loop); controls.update(); lightL.position.copy(camera.position); lightR.position.copy(camera.position);
+  for (const v of views()) { renderer.setViewport(v.x, v.y, v.w, v.h); renderer.setScissor(v.x, v.y, v.w, v.h); renderer.setClearColor(v.k === 'L' ? 0x0f1211 : 0x121614); renderer.render(scenes[v.k], camera) }
+}
+function list() {
+  const d = H.dice, f = S.filter.toLowerCase(), src = S.src === 'truth' ? 't4' : S.src;
+  const keys = Object.keys(H.classes).filter(k => !f || H.classes[k].toLowerCase().includes(f)).sort((a, b) => (d[b]?.thickness_mm ?? 0) - (d[a]?.thickness_mm ?? 0));
+  $('list').innerHTML = keys.map(k => { const dv = d[k]?.[src]; return `<div class="it${k === S.sel ? ' sel' : ''}" data-k="${k}"><input type="checkbox" ${S.vis.has(k) ? 'checked' : ''}><span class="sw" style="background:#${colour(+k).getHexString()}"></span><span class="nm" title="${H.classes[k]}">${H.classes[k]}</span><span class="d ${dcls(dv)}">${dv?.toFixed(2) ?? '–'}</span></div>` }).join('');
+  $('list').querySelectorAll('.it').forEach(el => {
+    el.querySelector('input').onclick = e => { e.stopPropagation(); const k = el.dataset.k; S.vis.has(k) ? S.vis.delete(k) : S.vis.add(k); applyVis() };
+    el.onclick = () => pick(el.dataset.k);
+  });
+}
+function pick(k) {
+  S.sel = S.sel === k ? null : k; if (k && !S.vis.has(k)) S.vis.add(k);
+  const d = H.dice[k] || {};
+  $('info').innerHTML = S.sel == null ? 'Tap a structure to name it.' :
+    `<b>${H.classes[k]}</b> · ${d.thickness_mm ?? '?'} mm thick · Dice ${['t4', 't8', 't12'].map(v => `${H.token_mm[v]} mm <span class="${dcls(d[v])}">${d[v]?.toFixed(2) ?? '–'}</span>`).join(' · ')}`;
+  applyVis(); list();
+}
+function seg() {
+  const items = [['truth', 'Truth'], ...Object.keys(H.token_mm).map(v => [v, H.token_mm[v] + ' mm'])];
+  $('srcSeg').innerHTML = ''; for (const [v, t] of items) { const b = document.createElement('button'); b.textContent = t; if (v === S.src) b.className = 'on'; b.onclick = () => { S.src = v; if (v === 'truth') S.compare = false; $('cmp').textContent = S.compare ? 'Single view' : 'Compare with truth'; seg(); place(); list() }; $('srcSeg').appendChild(b) }
+}
+const ray = new THREE.Raycaster(); let down = null;
+renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+  const v = views().find(v => e.clientX >= v.x && e.clientX < v.x + v.w && (innerHeight - e.clientY) >= v.y && (innerHeight - e.clientY) < v.y + v.h); if (!v) return;
+  ray.setFromCamera({ x: (e.clientX - v.x) / v.w * 2 - 1, y: ((innerHeight - e.clientY) - v.y) / v.h * 2 - 1 }, camera);
+  const hits = ray.intersectObjects(root[v.k].children, true).filter(h => h.object.visible && h.object.userData.k && (S.sel == null || h.object.userData.k === S.sel || mats[h.object.userData.k].opacity > .5));
+  if (hits.length) pick(hits[0].object.userData.k);
+});
+$('cmp').onclick = () => { if (S.src === 'truth') S.src = 't4'; S.compare = !S.compare; $('cmp').textContent = S.compare ? 'Single view' : 'Compare with truth'; seg(); place(); list() };
+$('toggleSide').onclick = () => { $('side').classList.toggle('hidden'); resize() };
+$('filter').oninput = e => { S.filter = e.target.value; list() };
+$('all').onclick = () => { Object.keys(H.classes).forEach(k => S.vis.add(k)); applyVis(); list() };
+$('none').onclick = () => { S.vis.clear(); S.sel = null; applyVis(); list() };
+$('worst').onclick = () => { const src = S.src === 'truth' ? 't4' : S.src; S.vis = new Set(Object.keys(H.classes).filter(k => H.dice[k]?.[src] != null).sort((a, b) => H.dice[a][src] - H.dice[b][src]).slice(0, 10)); S.sel = null; applyVis(); list() };
+$('skin').oninput = e => { skinMats.forEach(m => m.opacity = +e.target.value); applyVis() };
+addEventListener('resize', resize);
+Promise.all([fetch('3d/mesh.json').then(r => r.json()), fetch('3d/mesh.bin').then(r => r.arrayBuffer())]).then(([h, b]) => {
+  H = h; BIN = b; Object.keys(H.classes).filter(k => !/^(skull|brain|brainstem)$/i.test(H.classes[k])).forEach(k => S.vis.add(k));
+  $('loading').remove(); if (innerWidth < 760) $('side').classList.add('hidden');
+  seg(); place(); list(); loop();
+  $('info').innerHTML = `Face test person <b>${H.person}</b> (typical: median Dice among the 15). Drag to turn, pinch or scroll to zoom, tap a structure to name it. Steps on the surfaces are the 1 mm voxels.`;
+});
+</script>
+</body>
+</html>
