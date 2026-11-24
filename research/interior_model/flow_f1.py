@@ -17,7 +17,7 @@ training person; plausibility (per structure: volume, number of pieces, centre i
 people); shell fidelity (generated body outline against the input shell); agreement between draws.
 Uses the preparation cache of transformer_v2.py (<root>/prep_v2_TF<TF>), which must exist.
 args: <data dir> <steps> [TF=8] [limit people per split]
-env: OUT, REPO (optional upload), CFG = comma list of parts=pelvis|face|pelvis+face, d=384, layers=8, draws=3, valn=8"""
+env: OUT, REPO (optional upload), CFG = comma list of parts=pelvis|face|pelvis+face, d=384, layers=8, draws=3, valn=8, evals=20 (validations per run)"""
 import os, sys, json, time, math, numpy as np
 import torch, torch.nn as nn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     if os.path.exists(last):
         ck = torch.load(last, map_location=DEV); net.load_state_dict(ck['net']); ema.load_state_dict(ck['ema']); opt.load_state_dict(ck['opt']); sched.load_state_dict(ck['sched']); state = ck['state']
         rng = np.random.default_rng(state['step']); log('resumed at step', state['step'])
-    torch.cuda.reset_peak_memory_stats(); t2 = time.time(); start = state['step']; every = max(1, steps // 20); gt = torch.Generator(device=DEV); gt.manual_seed(start)
+    torch.cuda.reset_peak_memory_stats(); t2 = time.time(); start = state['step']; every = max(1, steps // int(CFG.get('evals', 20))); gt = torch.Generator(device=DEV); gt.manual_seed(start)
     def evaluate(it, tl):
         gv = torch.Generator(device=DEV); gv.manual_seed(12345)
         with torch.no_grad(): vl = float(np.mean([fm_loss(ema, k, (j + 0.5) / 4, 0.0, gv, False).item() for k in sp['val'] for j in range(4)]))
