@@ -239,7 +239,8 @@ if __name__ == '__main__':
         draws = [draw(k, NS, 100 + j) for j in range(DRAWS)]
         for pi, e in enumerate(data[k]):
             L, body, Lt = tr(e); raw = [d[pi] for d in draws]; nm = names[e.name]
-            shellfid[e.name].append(float(np.mean([((P > 0) & body).sum() / max(1, ((P > 0) | body).sum()) for P in raw])))
+            cell = np.zeros(e.G, bool); cell[tuple(e.idx.T)] = True; cell = cell.repeat(e.F, 0).repeat(e.F, 1).repeat(e.F, 2)   # voxels of the body tokens: the only place the model generates
+            shellfid[e.name].append(float(np.mean([((P > 0) & body & cell).sum() / max(1, (((P > 0) | body) & cell).sum()) for P in raw])))
             for P in raw: P[~body] = 0
             M = vote(raw); q = nearest(e); Lq = labels(q); s_ = tuple(slice(0, min(x, y)) for x, y in zip(Lq.shape, L.shape))
             N = np.zeros_like(M); N[s_] = np.where(Lq[s_] == UNK, 0, Lq[s_]); N[~body] = 0; N[body & (N == 0)] = 3 if e.name == 'face' else 5
