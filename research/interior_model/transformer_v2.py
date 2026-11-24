@@ -125,7 +125,8 @@ if __name__ == '__main__':
                 if s == 'train':
                     m = c + '~m'; data[m] = [prep(m, 'face', mirror(L, fidx['window_lo_mm'][0], 1.0, swap), 1.0, F, ae, NC, 1, [int(swap[k]) for k in kn])]; base[m] = c; sp[s].append(m)
             data[c] = parts; base[c] = c
-    if PREP_ONLY: log('prepared shard', SH, len(data), 'entries in', round(time.time() - t1), 's'); sys.exit(0)
+            if PREP_ONLY: data.clear(); parts.clear()                                                      # only the cache files matter; keep nothing in memory
+    if PREP_ONLY: log('prepared shard', SH, 'in', round(time.time() - t1), 's'); sys.exit(0)
     ntok = [sum(len(p.idx) for p in v) for v in data.values()]
     res['prep_seconds'] = round(time.time() - t1); res['tokens_per_person'] = dict(median=int(np.median(ntok)), max=int(max(ntok)), min=int(min(ntok)))
     log('prepared', len(data), 'people incl. mirrors in', res['prep_seconds'], 's; tokens', res['tokens_per_person'])
