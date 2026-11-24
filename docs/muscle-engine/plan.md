@@ -221,7 +221,18 @@ Each phase ends with its tests passing and a viewer. Costs are laptop time unles
 - E-TEST runner with T1–T4; the existing block and isometric scripts become T2 and T3.
 - Read Han et al. 2024 and decide what to copy (layering, solve order, network).
 - **Solver bake-off:** the same two-muscle-plus-fascia scene in Newton VBD and in libuipc. Measure penetration, sliding, time
-  and VRAM on the 1650. Installing libuipc needs asking first.
+  and VRAM on the 1650.
+  - *2026-11-24:* pyuipc 0.0.29 installed in `E:\splat\.venv-uipc` (own venv); its doctor passes on the 1650 (sm_75).
+  - Smoke test (one muscle dropped on a floor, placeholder material, 30 frames at 1/30 s):
+
+    | muscle | tets | median s/frame | worst frame | peak VRAM |
+    |---|---|---|---|---|
+    | vastus lateralis | 21.0 k | 0.75 s | 15 s (impact) | 1.2 GB |
+    | vastus medialis | 15.1 k | 0.61 s | 144 s (impact) | 1.0 GB |
+
+  - **libuipc rejects 5 of the 8 muscle meshes** (self-intersecting surfaces, 1–392 triangles), and the biceps femoris passes
+    the check but has surface parts at zero distance, so its contact kernel asserts. Newton never reported either. **E-PACK
+    must output surfaces that are intersection-free with a gap above the contact distance**; this is now a T1 check.
 - Read the myoLegs XML for patella coupling.
 - *Pass:* T1–T4, and a solver decision made from measurements.
 
@@ -270,5 +281,7 @@ Each phase ends with its tests passing and a viewer. Costs are laptop time unles
 1. **Scope of the first proof — decided 2026-11-24:** the thigh first (Phase 1), then the buttock on the chair (Phase 2), then
    the loaded vs hanging leg (Phase 2b).
 2. **Solver:** stay with Newton VBD alone, or run the Phase 0 bake-off against libuipc (an install, needs your OK).
-3. **Where heavy runs go:** laptop for Phases 0–2, HF Jobs from Phase 3 (with a cost table each time).
+3. **Where heavy runs go — decided 2026-11-24:** heavy runs go to HF Jobs from now on, each one asked first with a cost table.
+   The laptop keeps quick smoke tests and viewers; small cards (t4/l4/a10g-small) for smoke and development need no ask.
+   Both solvers have Linux builds (pyuipc ships manylinux wheels).
 4. **Stop the one-off experiments** until Phase 0 is done, except anything Phase 0 needs.
