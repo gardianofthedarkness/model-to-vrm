@@ -4,6 +4,7 @@ An anatomy-based engine for the elf: bones, muscles, fascia, fat and skin simula
 
 | document | what it is |
 |---|---|
+| [e-mat.md](e-mat.md) / [e-mat.json](e-mat.json) | material table for the subject profile (healthy woman ~28), 99 parameters with source populations; rebuilt by `research/muscle_engine/emat_build.py` then `emat_md.py` |
 | [plan.md](plan.md) | the engine plan: modules, test scenes, phases, reuse, subject profile, decisions |
 | [sit-physics-research-handoff.md](sit-physics-research-handoff.md) | how we got here: the sit-down research and Tests 1–5 (tet winding, block contraction, knee, bone winding, loaded vs hanging) |
 | [tissue-research/muscle.md](tissue-research/muscle.md) | skeletal muscle: passive, active, damping, sitting, datasets |

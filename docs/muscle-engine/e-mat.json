@@ -1,0 +1,2429 @@
+{
+ "version": "0.1",
+ "date": "2026-11-24",
+ "units": "SI",
+ "status_values": [
+  "read in full",
+  "abstract",
+  "unverified",
+  "derived",
+  "-"
+ ],
+ "profile": {
+  "sex": "female",
+  "age_years": 28,
+  "health": "healthy",
+  "build": "normal; BMI-equivalent computed from her own mesh volume and height (plan.md 2.1)",
+  "source_priority": [
+   "A: women ~20-35, in vivo",
+   "B: mixed-sex young adults, in vivo",
+   "C: any adult, in vivo",
+   "D: ex vivo human or animal",
+   "M: model constant (no tissue population)",
+   "N: no measured source"
+  ],
+  "geometry": "fat depth from her surface (skin_fat.npz); muscle and bone shapes from the warped atlas (adult male, see e-mat.md section 5)"
+ },
+ "params": [
+  {
+   "id": "muscle.passive.mu_along",
+   "tissue": "muscle",
+   "parameter": "shear modulus along fibres, relaxed, short length (G1 target)",
+   "value": 4160,
+   "unit": "Pa",
+   "range": [
+    3190,
+    5130
+   ],
+   "model": "Blemker-Delp transversely isotropic (G1); small-strain SWE value, mapping to the large-strain constant is a T4 fit",
+   "source": "Maeda et al. 2021, Int J Environ Res Public Health 18:8947, doi:10.3390/ijerph18178947",
+   "population": "9 women 30-39 y (34.8 +/- 3.0), BMI 20.3, Japanese, not regularly exercising; in vivo SWE; vastus lateralis, knee full extension",
+   "tier": "A",
+   "adjustment": "no adjustment: direct female 30-39 value; same study found no sex effect at full extension (Gennisson 2010 brachialis 5.4 kPa agrees)",
+   "status": "read in full",
+   "tests": [
+    "T4",
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "muscle.passive.mu_along_knee90",
+   "tissue": "muscle",
+   "parameter": "shear modulus along fibres, moderately stretched (knee 90 deg)",
+   "value": 8630,
+   "unit": "Pa",
+   "range": [
+    6810,
+    10450
+   ],
+   "model": "Blemker-Delp passive fibre curve (check of P1, P2, lambda_ofl)",
+   "source": "Maeda et al. 2021, Int J Environ Res Public Health 18:8947, doi:10.3390/ijerph18178947",
+   "population": "9 women 30-39 y, BMI 20.3; in vivo SWE; vastus lateralis, knee 90 deg flexion",
+   "tier": "A",
+   "adjustment": "no adjustment: direct female value. Akagi 2019 (18 men, 23 women, 21-22 y, VL/VM/RF at 90 deg) found men > women (p<0.001) and supports a female-specific value; its kPa values are only in a figure",
+   "status": "read in full",
+   "tests": [
+    "T3",
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "muscle.passive.mu_along_fullflex",
+   "tissue": "muscle",
+   "parameter": "shear modulus along fibres, strongly stretched (knee full flexion)",
+   "value": 43020,
+   "unit": "Pa",
+   "range": [
+    33580,
+    52460
+   ],
+   "model": "Blemker-Delp passive fibre curve (check)",
+   "source": "Maeda et al. 2021, Int J Environ Res Public Health 18:8947, doi:10.3390/ijerph18178947",
+   "population": "9 women 30-39 y, BMI 20.3; in vivo SWE; vastus lateralis, knee full flexion",
+   "tier": "A",
+   "adjustment": "no adjustment: direct female value; in this study women were lower than men at full flexion (p=0.001; men 30-39: 56.7 kPa)",
+   "status": "read in full",
+   "tests": [
+    "T3",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "muscle.passive.mu_cross",
+   "tissue": "muscle",
+   "parameter": "shear modulus across fibres, relaxed (G2)",
+   "value": 800,
+   "unit": "Pa",
+   "range": [
+    50,
+    1030
+   ],
+   "model": "Blemker-Delp transversely isotropic (G2)",
+   "source": "Gennisson et al. 2010, Ultrasound Med Biol 36:789, doi:10.1016/j.ultrasmedbio.2010.02.013; Palevski et al. 2006, J Biomech Eng 128:782",
+   "population": "Gennisson: healthy volunteers, in vivo SSI, brachialis (n, sex, age not in abstract); Palevski: porcine gluteus, fresh, ex vivo, preconditioned long-term 0.81 kPa",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex or age data for cross-fibre shear found; value set at Palevski's long-term figure inside Gennisson's in vivo band; flagged",
+   "status": "read in full (Gennisson, per tissue report); abstract (Palevski)",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.passive.fibre_P1",
+   "tissue": "muscle",
+   "parameter": "passive fibre stress coefficient P1",
+   "value": 0.05,
+   "unit": "1 (fraction of sigma_max; normalisation unverified)",
+   "range": null,
+   "model": "Blemker-Delp passive fibre law f_p = P1(exp(P2(l/l_ofl-1))-1)",
+   "source": "Blemker, Pinsky & Delp 2005, J Biomech 38:657; Blemker & Delp 2005, Ann Biomed Eng 33:661, doi:10.1007/s10439-005-1433-7; FEBio muscle material https://febiosoftware.github.io/febio-feature-manual/features/solid_material_muscle_material",
+   "population": "model constant matched to whole-muscle behaviour, no tissue population",
+   "tier": "M",
+   "adjustment": "no adjustment: model constant; refit to the female passive SWE angle series",
+   "status": "read in full (FEBio manual, per tissue report)",
+   "tests": [
+    "T3"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Maeda 2021 female VL shear modulus at 3 knee angles (rows mu_along*) + Zenodo 7081639 muscle-tendon length split",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.passive.fibre_P2",
+   "tissue": "muscle",
+   "parameter": "passive fibre exponent P2",
+   "value": 6.6,
+   "unit": "1",
+   "range": null,
+   "model": "Blemker-Delp passive fibre law",
+   "source": "Blemker, Pinsky & Delp 2005, J Biomech 38:657; Blemker & Delp 2005, Ann Biomed Eng 33:661, doi:10.1007/s10439-005-1433-7; FEBio muscle material https://febiosoftware.github.io/febio-feature-manual/features/solid_material_muscle_material",
+   "population": "model constant, no tissue population",
+   "tier": "M",
+   "adjustment": "no adjustment: model constant; refit as for P1",
+   "status": "read in full (FEBio manual, per tissue report)",
+   "tests": [
+    "T3"
+   ],
+   "fit_required": true,
+   "fit_dataset": "as muscle.passive.fibre_P1",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.passive.lambda_ofl",
+   "tissue": "muscle",
+   "parameter": "fibre stretch at optimal length relative to mesh rest",
+   "value": 1.4,
+   "unit": "1",
+   "range": [
+    1.07,
+    1.4
+   ],
+   "model": "Blemker-Delp (1.4 in papers; 1.07 in the FEBio example)",
+   "source": "Blemker, Pinsky & Delp 2005, J Biomech 38:657; Blemker & Delp 2005, Ann Biomed Eng 33:661, doi:10.1007/s10439-005-1433-7; FEBio muscle material https://febiosoftware.github.io/febio-feature-manual/features/solid_material_muscle_material",
+   "population": "model constant; really a property of the atlas rest pose",
+   "tier": "M",
+   "adjustment": "no adjustment: must be computed per muscle from myoLegs optimal fibre length against the warped atlas fibre length (both male, see conflicts)",
+   "status": "abstract (PMC2857665 confirms 1.4)",
+   "tests": [
+    "T3"
+   ],
+   "fit_required": true,
+   "fit_dataset": "geometry: myoLegs/Rajagopal L_opt vs atlas fibre length; checked by the T3 force-length scene",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.passive.bulk_physical",
+   "tissue": "muscle",
+   "parameter": "physical bulk modulus",
+   "value": 2000000000.0,
+   "unit": "Pa",
+   "range": null,
+   "model": "volumetric term U(J); physical value, too stiff for VBD",
+   "source": "muscle is about 80 % water (Van Loocke 2009); K of water used as the estimate",
+   "population": "none (water)",
+   "tier": "N",
+   "adjustment": "no adjustment: physical estimate, not a measurement of muscle",
+   "status": "unverified",
+   "tests": [
+    "T2"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "the solver uses muscle.solver.K_over_G instead",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.solver.K_over_G",
+   "tissue": "muscle",
+   "parameter": "bulk-to-shear ratio used by the solver",
+   "value": 100,
+   "unit": "1",
+   "range": [
+    100,
+    2000
+   ],
+   "model": "volumetric penalty; stability choice, not a material fact",
+   "source": "FEBio muscle example uses K/G = 2000 (k = 1 MPa, G = 500 Pa)",
+   "population": "solver setting",
+   "tier": "M",
+   "adjustment": "no adjustment: numerical setting, judged only by the T2 volume check",
+   "status": "read in full (FEBio manual, per tissue report)",
+   "tests": [
+    "T2"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "pass: volume change < 1 % (muscle.check.volume_change)",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.check.volume_change",
+   "tissue": "muscle",
+   "parameter": "volume change during contraction (check)",
+   "value": 0.001,
+   "unit": "1 (upper bound)",
+   "range": null,
+   "model": "check target",
+   "source": "Baskin & Paolini 1967 (as quoted in the muscle report)",
+   "population": "not read",
+   "tier": "N",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T2"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.density",
+   "tissue": "muscle",
+   "parameter": "density",
+   "value": 1050,
+   "unit": "kg/m^3",
+   "range": [
+    1040,
+    1060
+   ],
+   "model": "inertia",
+   "source": "Woodard & White 1986, Br J Radiol 59:1209 (values as tabulated against ICRU 44 in PMC3396587, Table 10); ICRU 44 (1989) 1040",
+   "population": "reference adult tissue composition, sex not stated",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex effect on muscle density found",
+   "status": "abstract (comparison table seen via search, paper not read)",
+   "tests": [
+    "T8",
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.sigma_max",
+   "tissue": "muscle",
+   "parameter": "peak isometric fibre stress (specific tension)",
+   "value": 268000.0,
+   "unit": "Pa",
+   "range": [
+    171000.0,
+    573000.0
+   ],
+   "model": "Blemker-Delp active fibre stress sigma_max * a * f_L(lambda)",
+   "source": "Persad et al. 2024, J Appl Physiol 137:945, doi:10.1152/japplphysiol.00296.2024; range ends: gracilis direct 171 kPa (Drexel 2023), O'Brien et al. 2010, Exp Physiol 95:202, doi:10.1113/expphysiol.2009.048967",
+   "population": "systematic review: 29 in vivo human studies, 95 values (2-73 N/cm^2), mixed sex",
+   "tier": "B",
+   "adjustment": "no adjustment: O'Brien 2010 found no sex difference in in vivo quadriceps specific tension (women 57.3 +/- 13, men 55 +/- 11 N/cm^2, 20 adults); women differ in PCSA, not stress",
+   "status": "abstract",
+   "tests": [
+    "T3",
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "checked-no-difference"
+  },
+  {
+   "id": "muscle.active.fl_halfwidth",
+   "tissue": "muscle",
+   "parameter": "active force-length: half-width of the central parabola",
+   "value": 0.5,
+   "unit": "1 (of lambda/lambda_ofl)",
+   "range": null,
+   "model": "f = 1-4(1-x)^2 for 0.6<x<1.4; 9(x-0.4)^2 below; 9(x-1.6)^2 above; x = lambda/lambda_ofl",
+   "source": "Blemker, Pinsky & Delp 2005, J Biomech 38:657; Blemker & Delp 2005, Ann Biomed Eng 33:661, doi:10.1007/s10439-005-1433-7; FEBio muscle material https://febiosoftware.github.io/febio-feature-manual/features/solid_material_muscle_material",
+   "population": "model curve (sarcomere-based), no tissue population",
+   "tier": "M",
+   "adjustment": "no adjustment: no sex effect on the force-length shape was searched for or found; flagged",
+   "status": "read in full (FEBio manual, per tissue report)",
+   "tests": [
+    "T3"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.fv_vmax",
+   "tissue": "muscle",
+   "parameter": "max shortening velocity",
+   "value": 10,
+   "unit": "L_opt/s",
+   "range": null,
+   "model": "Hill force-velocity; take the curve from MyoSuite to stay consistent with E-ACT",
+   "source": "Zajac 1989; Millard et al. 2013, doi:10.1115/1.4023390",
+   "population": "model constant",
+   "tier": "M",
+   "adjustment": "no adjustment: use MyoSuite's curve",
+   "status": "unverified",
+   "tests": [
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.fv_ecc_plateau",
+   "tissue": "muscle",
+   "parameter": "eccentric force plateau",
+   "value": null,
+   "unit": "1 (of F_iso)",
+   "range": [
+    1.4,
+    1.8
+   ],
+   "model": "Hill force-velocity (MyoSuite curve)",
+   "source": "Zajac 1989; Millard et al. 2013",
+   "population": "model constant",
+   "tier": "M",
+   "adjustment": "no adjustment: use MyoSuite's curve",
+   "status": "unverified",
+   "tests": [
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.stiffening_direction",
+   "tissue": "muscle",
+   "parameter": "how stiffness rises with activation",
+   "value": null,
+   "unit": "-",
+   "range": null,
+   "model": "form: stiffening only along fibres, produced by the active fibre stress itself; no extra isotropic g_max term; cross-fibre stays at G2",
+   "source": "Gennisson et al. 2010, Ultrasound Med Biol 36:789, doi:10.1016/j.ultrasmedbio.2010.02.013",
+   "population": "in vivo brachialis, healthy volunteers (n, sex not in abstract): along-fibre x20 from 0 to 4 kg, cross-fibre constant",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data on activation stiffening found; flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.mu_ratio_20pctMVC",
+   "tissue": "muscle",
+   "parameter": "shear stiffness ratio, rest to 20 % MVC (check)",
+   "value": 2.58,
+   "unit": "1",
+   "range": [
+    2.11,
+    2.58
+   ],
+   "model": "check of the active fibre term",
+   "source": "Bensamoun et al. 2008 (MRE, vastus medialis; 3.69->9.52 kPa 1D, 4.36->9.22 kPa 2D)",
+   "population": "in vivo MRE; n, sex, age not read",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data found; flagged",
+   "status": "abstract",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.mu_torque_linearity",
+   "tissue": "muscle",
+   "parameter": "linearity of shear modulus vs torque (check, R^2)",
+   "value": 0.982,
+   "unit": "1",
+   "range": null,
+   "model": "check: indentation/SWE stiffness must rise linearly with force",
+   "source": "Bouillard, Nordez & Hug 2011, PLoS ONE 6:e29261, doi:10.1371/journal.pone.0029261",
+   "population": "11 subjects, in vivo SSI, hand muscles (sex, age not in abstract)",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.thickness_gain",
+   "tissue": "muscle",
+   "parameter": "muscle thickness gain rest to contraction (check)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.17,
+    0.2
+   ],
+   "model": "check for T5 bulging",
+   "source": "vastus medialis at 90 deg knee, https://pmc.ncbi.nlm.nih.gov/articles/PMC3872419 ; saturation above ~30 % MVC: Hodges et al. 2003, doi:10.1002/mus.10375",
+   "population": "in vivo ultrasound; population and contraction level not read",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.active.transverse_load_loss",
+   "tissue": "muscle",
+   "parameter": "force loss under transverse load 1.1-3.2 N/cm^2 (optional)",
+   "value": 0.13,
+   "unit": "1",
+   "range": [
+    0.13,
+    0.15
+   ],
+   "model": "optional second-order term",
+   "source": "Siebert et al. 2016, J Biomech (PubMed 26976226); Siebert 2014",
+   "population": "rat gastrocnemius, in situ / isolated",
+   "tier": "D",
+   "adjustment": "no adjustment: animal only",
+   "status": "abstract",
+   "tests": [
+    "T5",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.eta_along",
+   "tissue": "muscle",
+   "parameter": "shear viscosity along fibres (relaxed)",
+   "value": null,
+   "unit": "Pa*s",
+   "range": [
+    0.6,
+    1.6
+   ],
+   "model": "Voigt shear viscosity (high-frequency)",
+   "source": "Gennisson et al. 2010, Ultrasound Med Biol 36:789, doi:10.1016/j.ultrasmedbio.2010.02.013",
+   "population": "in vivo brachialis (n, sex not in abstract)",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data; x10 when loaded",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.eta_cross",
+   "tissue": "muscle",
+   "parameter": "shear viscosity across fibres (relaxed)",
+   "value": null,
+   "unit": "Pa*s",
+   "range": [
+    0.5,
+    1.5
+   ],
+   "model": "Voigt shear viscosity",
+   "source": "Gennisson et al. 2010, Ultrasound Med Biol 36:789, doi:10.1016/j.ultrasmedbio.2010.02.013",
+   "population": "as above",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data; x3 when loaded",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.prony_tau",
+   "tissue": "muscle",
+   "parameter": "Prony time constants",
+   "value": [
+    0.6,
+    6,
+    30,
+    60,
+    300
+   ],
+   "unit": "s",
+   "range": null,
+   "model": "NLV-SYM / Prony series",
+   "source": "Van Loocke et al. 2009, J Biomech 42:1038, doi:10.1016/j.jbiomech.2009.02.022 (Table 2)",
+   "population": "porcine muscle, < 2 h post mortem, unconfined compression, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: no human in vivo relaxation series exists; for animation drop 60/300 s; flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "Bosboom 2001 in vivo rat single tau = 6.01 s agrees with the 6 s term",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.prony_g_fibre",
+   "tissue": "muscle",
+   "parameter": "Prony weights, fibre direction",
+   "value": [
+    0.374,
+    0.285,
+    0.077,
+    0.078,
+    0.101
+   ],
+   "unit": "1",
+   "range": null,
+   "model": "Prony series",
+   "source": "Van Loocke et al. 2009, J Biomech 42:1038, doi:10.1016/j.jbiomech.2009.02.022 (Table 2)",
+   "population": "porcine, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment; flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.prony_g_cross",
+   "tissue": "muscle",
+   "parameter": "Prony weights, cross-fibre",
+   "value": [
+    0.097,
+    0.532,
+    0.072,
+    0.0,
+    0.086
+   ],
+   "unit": "1",
+   "range": null,
+   "model": "Prony series",
+   "source": "Van Loocke et al. 2009, J Biomech 42:1038, doi:10.1016/j.jbiomech.2009.02.022 (Table 2)",
+   "population": "porcine, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment; flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.visc.short_long_ratio",
+   "tissue": "muscle",
+   "parameter": "instantaneous / long-term transverse modulus",
+   "value": null,
+   "unit": "1",
+   "range": [
+    7.0,
+    13.9
+   ],
+   "model": "QLV check (5.7/0.81 preconditioned; 8.5/0.61 not)",
+   "source": "Palevski et al. 2006, J Biomech Eng 128:782",
+   "population": "porcine gluteus, fresh, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment; flagged",
+   "status": "abstract",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.dyn.soft_tissue_freq",
+   "tissue": "muscle",
+   "parameter": "natural frequency of the relaxed leg soft-tissue package (check)",
+   "value": 15,
+   "unit": "Hz",
+   "range": [
+    3,
+    55
+   ],
+   "model": "check for T8 (whole package: muscle + fat + skin)",
+   "source": "Nigg-group review, Sports Med Open 2022, doi:10.1186/s40798-022-00524-w; range: Schmitt & Gunther 2011, doi:10.1007/s00419-010-0458-z",
+   "population": "in vivo adults (mixed; details not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data; the 0.98 m figure rings higher by size scaling (state it, do not retune)",
+   "status": "abstract",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "muscle.dyn.damping_ratio",
+   "tissue": "muscle",
+   "parameter": "damping ratio of the thigh soft-tissue package",
+   "value": null,
+   "unit": "1",
+   "range": null,
+   "model": "Rayleigh / Prony damping in E-TIS",
+   "source": "Wakeling & Nigg 2001 (values not read)",
+   "population": "in vivo, not read",
+   "tier": "N",
+   "adjustment": "no measured value",
+   "status": "unverified",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Dyna / DFAUST 4D jiggle (research licence; use female subjects only) for frequency and decay",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "tendon.E",
+   "tissue": "tendon",
+   "parameter": "Young's modulus, free tendon",
+   "value": 610000000.0,
+   "unit": "Pa",
+   "range": [
+    530000000.0,
+    690000000.0
+   ],
+   "model": "stiff tets or 1D springs, k = E*A/L from her geometry",
+   "source": "Onambele, Burgess & Pearson 2007, J Orthop Res 25:1635, doi:10.1002/jor.20404",
+   "population": "10 women 21.3 +/- 0.9 y, in vivo ultrasound, patellar tendon, isometric ramps (tibial motion corrected)",
+   "tier": "A",
+   "adjustment": "no adjustment: direct young-female value (men in the same study 0.68 GPa; Hansen 2006 mixed/unstated 1.09 GPa)",
+   "status": "abstract",
+   "tests": [
+    "T3",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "tendon.patellar.strain_mvc",
+   "tissue": "tendon",
+   "parameter": "patellar tendon strain at MVC (check)",
+   "value": 0.106,
+   "unit": "1",
+   "range": [
+    0.096,
+    0.116
+   ],
+   "model": "check",
+   "source": "Onambele, Burgess & Pearson 2007, J Orthop Res 25:1635, doi:10.1002/jor.20404",
+   "population": "10 women 21 y, in vivo",
+   "tier": "A",
+   "adjustment": "no adjustment: direct",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "tendon.patellar.stiffness",
+   "tissue": "tendon",
+   "parameter": "patellar tendon stiffness (check only; geometry-dependent)",
+   "value": 1053000.0,
+   "unit": "N/m",
+   "range": [
+    945000.0,
+    1161000.0
+   ],
+   "model": "check",
+   "source": "Onambele, Burgess & Pearson 2007, J Orthop Res 25:1635, doi:10.1002/jor.20404",
+   "population": "10 women 21 y, in vivo",
+   "tier": "A",
+   "adjustment": "no adjustment: direct; the elf's value comes from E*A/L of her own tendon",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "aponeurosis.strain_long",
+   "tissue": "aponeurosis",
+   "parameter": "longitudinal strain at high force (check)",
+   "value": 0.014,
+   "unit": "1",
+   "range": [
+    0.01,
+    0.018
+   ],
+   "model": "anisotropic shell",
+   "source": "Magnusson et al. 2003, Acta Physiol Scand, doi:10.1046/j.1365-201x.2003.01048.x",
+   "population": "n = 5, in vivo ultrasound, gastrocnemius distal aponeurosis (sex not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data for aponeurosis found; flagged",
+   "status": "abstract",
+   "tests": [
+    "T3",
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "aponeurosis.transverse_ratio",
+   "tissue": "aponeurosis",
+   "parameter": "transverse / longitudinal strain during active force",
+   "value": 4,
+   "unit": "1",
+   "range": null,
+   "model": "anisotropic shell",
+   "source": "Azizi & Roberts 2009, https://pmc.ncbi.nlm.nih.gov/articles/PMC2754367",
+   "population": "turkey, in vivo sonomicrometry",
+   "tier": "D",
+   "adjustment": "no adjustment: animal only; flagged",
+   "status": "abstract",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "aponeurosis.E_long",
+   "tissue": "aponeurosis",
+   "parameter": "longitudinal modulus",
+   "value": null,
+   "unit": "Pa",
+   "range": null,
+   "model": "anisotropic shell",
+   "source": "none measured",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "no measured value",
+   "status": "-",
+   "tests": [
+    "T3",
+    "T5"
+   ],
+   "fit_required": true,
+   "fit_dataset": "fit to aponeurosis.strain_long (Magnusson 2003) with DL_Track_US / Zenodo 7081639 ultrasound",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "tendon.density",
+   "tissue": "tendon",
+   "parameter": "density",
+   "value": null,
+   "unit": "kg/m^3",
+   "range": null,
+   "model": "inertia",
+   "source": "no source read",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap: no value read; tendon mass is small next to muscle",
+   "status": "-",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.mu",
+   "tissue": "fat",
+   "parameter": "Ogden shear modulus mu1 (small strain)",
+   "value": 1167,
+   "unit": "Pa",
+   "range": [
+    330,
+    1600
+   ],
+   "model": "1st-order Ogden, nearly incompressible",
+   "source": "Al-Dirini et al. 2016, Ann Biomed Eng 44:2805, doi:10.1007/s10439-016-1560-3 (constants read from Table 1 of Wang et al. 2021, doi:10.1155/2021/4496416); agrees with Then et al. 2007, Technol Health Care 15:385 (G_inf 1182 Pa)",
+   "population": "one seated person, in vivo buttock MRI + inverse FE (sex not verified; the same group's 2017 cohort is 10 men); Then: one subject, gluteal, in vivo",
+   "tier": "C",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "abstract / secondary (Wang 2021 read in full; attribution to Al-Dirini unverified)",
+   "tests": [
+    "T4",
+    "T5",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.alpha",
+   "tissue": "fat",
+   "parameter": "Ogden exponent alpha1",
+   "value": 16.2,
+   "unit": "1",
+   "range": [
+    16.2,
+    20
+   ],
+   "model": "1st-order Ogden",
+   "source": "Al-Dirini et al. 2016, Ann Biomed Eng 44:2805, doi:10.1007/s10439-016-1560-3 (constants read from Table 1 of Wang et al. 2021, doi:10.1155/2021/4496416); Comley & Fleck 2012 (porcine, alpha 20)",
+   "population": "as fat.mu",
+   "tier": "C",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "abstract / secondary",
+   "tests": [
+    "T5",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.bulk_physical",
+   "tissue": "fat",
+   "parameter": "physical bulk modulus (derived rho*c^2)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    1910000000.0,
+    2080000000.0
+   ],
+   "model": "volumetric term; too stiff for VBD",
+   "source": "acoustic tables c = 1450-1480 m/s, rho = 911-950 kg/m^3 (https://pmc.ncbi.nlm.nih.gov/articles/PMC4521448/table/Tab3)",
+   "population": "tissue acoustics, population not read",
+   "tier": "N",
+   "adjustment": "no adjustment: derived from cited c and rho",
+   "status": "unverified",
+   "tests": [
+    "T2"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.solver.nu",
+   "tissue": "fat",
+   "parameter": "Poisson's ratio used by the solver",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.49,
+    0.499
+   ],
+   "model": "volumetric penalty",
+   "source": "heel fat pad indentation fits, arXiv:2312.04108; Lanzl 2025 nu = 0.499",
+   "population": "heel pad in vivo / ex vivo",
+   "tier": "C",
+   "adjustment": "no adjustment: numerical choice inside the cited band; check fat thickness loss against Mogale 2023",
+   "status": "abstract",
+   "tests": [
+    "T5",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.density",
+   "tissue": "fat",
+   "parameter": "density",
+   "value": 950,
+   "unit": "kg/m^3",
+   "range": [
+    911,
+    950
+   ],
+   "model": "inertia",
+   "source": "Woodard & White 1986, Br J Radiol 59:1209 (values as tabulated against ICRU 44 in PMC3396587, Table 10); acoustic tables 911-950; Al-Dirini model 920",
+   "population": "reference adult tissue composition, sex not stated",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex effect on adipose density found",
+   "status": "abstract",
+   "tests": [
+    "T8",
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.E_tension_initial",
+   "tissue": "fat",
+   "parameter": "tensile modulus, initial (check)",
+   "value": 1600,
+   "unit": "Pa",
+   "range": [
+    800,
+    2400
+   ],
+   "model": "check of the Ogden fit",
+   "source": "Alkhouli et al. 2013, Am J Physiol Endocrinol Metab, doi:10.1152/ajpendo.00111.2013",
+   "population": "44 surgical patients, human SAT, ex vivo (sex split not read)",
+   "tier": "D",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "abstract",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.E_tension_30pct",
+   "tissue": "fat",
+   "parameter": "tensile modulus at <= 30 % strain (check)",
+   "value": 11700,
+   "unit": "Pa",
+   "range": [
+    5300,
+    18100
+   ],
+   "model": "check of the Ogden stiffening",
+   "source": "Alkhouli et al. 2013, Am J Physiol Endocrinol Metab, doi:10.1152/ajpendo.00111.2013",
+   "population": "as above",
+   "tier": "D",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "abstract",
+   "tests": [
+    "T4"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.fibre_k1",
+   "tissue": "fat",
+   "parameter": "septa fibre stiffness k1 (optional anisotropy)",
+   "value": 429,
+   "unit": "Pa",
+   "range": null,
+   "model": "neo-Hooke + 3 circular fibre families",
+   "source": "Lanzl et al. 2025, JMBBM 169:107042, doi:10.1016/j.jmbbm.2025.107042, fit to Sommer et al. 2013",
+   "population": "human abdominal fat, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.fibre_k2",
+   "tissue": "fat",
+   "parameter": "septa fibre exponent k2 (optional anisotropy)",
+   "value": 11.6,
+   "unit": "1",
+   "range": null,
+   "model": "neo-Hooke + 3 circular fibre families",
+   "source": "Lanzl et al. 2025 (as above)",
+   "population": "human abdominal fat, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: no adult sex, age or BMI effect on subcutaneous-fat stiffness was found (only a paediatric SWE study, and Alkhouli 2013 reports no strong BMI dependence, unverified); kept and flagged",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.rate_limit",
+   "tissue": "fat",
+   "parameter": "strain rate below which fat is rate-independent",
+   "value": 10,
+   "unit": "1/s",
+   "range": null,
+   "model": "validity of the quasi-static solve",
+   "source": "Comley & Fleck 2012, Int J Impact Eng 46:1, doi:10.1016/j.ijimpeng.2011.12.009",
+   "population": "porcine, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment; flagged",
+   "status": "unverified",
+   "tests": [
+    "T7",
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.relaxation",
+   "tissue": "fat",
+   "parameter": "relaxation (two-exponential, constants)",
+   "value": null,
+   "unit": "s",
+   "range": null,
+   "model": "2-term Prony series",
+   "source": "Alkhouli et al. 2013, Am J Physiol Endocrinol Metab, doi:10.1152/ajpendo.00111.2013 (two exponentials, constants not retrieved); Geerligs 2008 power law (porcine)",
+   "population": "ex vivo",
+   "tier": "N",
+   "adjustment": "no measured constants available to us",
+   "status": "-",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Alkhouli 2013 full-text relaxation curves if obtained; else Dyna/DFAUST decay (female subjects)",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.superficial_deep_ratio",
+   "tissue": "fat",
+   "parameter": "stiffness ratio superficial / deep SAT",
+   "value": null,
+   "unit": "1",
+   "range": null,
+   "model": "two fat layers split by the membranous layer",
+   "source": "strain elastography, Australas J Ultrasound Med, doi:10.1002/ajum.12100 (qualitative only)",
+   "population": "210 pregnant women, in vivo",
+   "tier": "N",
+   "adjustment": "gap: only 'superficial stiffer' is known; keep one fat material",
+   "status": "unverified",
+   "tests": [
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fat.damping_ratio",
+   "tissue": "fat",
+   "parameter": "fat-only damping",
+   "value": null,
+   "unit": "1",
+   "range": null,
+   "model": "E-TIS damping",
+   "source": "none found",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap",
+   "status": "-",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Dyna / DFAUST (female subjects); fat and muscle are mixed in it",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.matrix_mu",
+   "tissue": "skin",
+   "parameter": "GOH matrix shear modulus",
+   "value": 201400.0,
+   "unit": "Pa",
+   "range": [
+    25000.0,
+    260000.0
+   ],
+   "model": "GOH membrane shell (neo-Hooke matrix + 2 dispersed fibre families)",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016; in vivo suction range 25-260 kPa (Kalra 2016, unverified)",
+   "population": "7 donors aged 81-97, back skin, uniaxial, ex vivo",
+   "tier": "D",
+   "adjustment": "not applied: Agache 1980 (138 people 3-89 y, in vivo torsion) found Young's modulus about doubles above age 30, so young skin is softer, but the factor is from another method and its numbers are unverified; treat 0.20 MPa as an upper bound",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "FEMTO-ST CutiScan suction DIC (one 28-y man, forearm) + Rupani 2025 knee/thigh stretch DIC (15 people)",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "found-not-applied"
+  },
+  {
+   "id": "skin.k1",
+   "tissue": "skin",
+   "parameter": "GOH fibre stiffness k1 (upper bound)",
+   "value": 243600000.0,
+   "unit": "Pa",
+   "range": null,
+   "model": "GOH",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016",
+   "population": "7 donors 81-97 y, ex vivo",
+   "tier": "D",
+   "adjustment": "not applied (see skin.matrix_mu); upper bound",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "as skin.matrix_mu",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "found-not-applied"
+  },
+  {
+   "id": "skin.k2",
+   "tissue": "skin",
+   "parameter": "GOH fibre exponent k2",
+   "value": 0.1327,
+   "unit": "1",
+   "range": null,
+   "model": "GOH",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016",
+   "population": "7 donors 81-97 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "as skin.matrix_mu",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.kappa",
+   "tissue": "skin",
+   "parameter": "GOH fibre dispersion kappa",
+   "value": 0.1404,
+   "unit": "1",
+   "range": [
+    0.1376,
+    0.1432
+   ],
+   "model": "GOH",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016 (from histology)",
+   "population": "7 donors 81-97 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.fibre_angle",
+   "tissue": "skin",
+   "parameter": "mean fibre angle to the Langer line",
+   "value": 0.716,
+   "unit": "rad",
+   "range": null,
+   "model": "GOH; field direction from the Langer-line map",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016",
+   "population": "7 donors 81-97 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.prestress",
+   "tissue": "skin",
+   "parameter": "in vivo in-plane pre-stress (orthotropic)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    28000.0,
+    92000.0
+   ],
+   "model": "rest shape smaller than the mesh",
+   "source": "Flynn, Taberner & Nielsen 2011, Ann Biomed Eng 39:1935, doi:10.1007/s10439-011-0292-7",
+   "population": "volunteers, in vivo forearm and upper arm micro-robot (n, sex, age not in abstract)",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex or age effect found; no thigh value",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Rupani 2025 thigh/knee DIC (and retraction data if found)",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.thickness_thigh",
+   "tissue": "skin",
+   "parameter": "skin thickness, thigh (epidermis + dermis)",
+   "value": 0.001683,
+   "unit": "m",
+   "range": [
+    0.00129,
+    0.00207
+   ],
+   "model": "shell thickness",
+   "source": "Wang Y. et al. 2025, Quant Imaging Med Surg 15:5218, doi:10.21037/qims-2024-2637 (Table 4); cf. Derraik et al. 2014, PLoS ONE 9:e86637, doi:10.1371/journal.pone.0086637",
+   "population": "33 healthy women (all 18-74 y, women's median 45), Chinese, in vivo 22/75 MHz ultrasound, right thigh: dermis 1.5645 +/- 0.3902 mm + epidermis 0.1189 mm",
+   "tier": "C",
+   "adjustment": "no adjustment: Wang 2025 found no thigh age correlation; Derraik 2014 (diabetic adults) gives -6 um/yr dermis, which would add about 0.1 mm at 28 vs 44 y, inside the range; women thinner than men (1.56 vs 1.94 mm dermis) is already in the source",
+   "status": "read in full",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "skin.thickness_buttock",
+   "tissue": "skin",
+   "parameter": "skin thickness, buttock",
+   "value": null,
+   "unit": "m",
+   "range": null,
+   "model": "shell thickness",
+   "source": "none found",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap: no measurement found (trunk 3-7 mm from Herlin 2015 does not apply)",
+   "status": "-",
+   "tests": [
+    "T1",
+    "T7"
+   ],
+   "fit_required": true,
+   "fit_dataset": "no dataset found; MULTiS (100 people, CC BY) covers limbs only - needs a new source",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.thickness_knee",
+   "tissue": "skin",
+   "parameter": "skin thickness, knee",
+   "value": null,
+   "unit": "m",
+   "range": null,
+   "model": "shell thickness",
+   "source": "none found",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap: no measurement found",
+   "status": "-",
+   "tests": [
+    "T1",
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "no dataset found - needs a new source",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.bending_D",
+   "tissue": "skin",
+   "parameter": "bending stiffness (derived D = E t^3 / 12(1-nu^2))",
+   "value": null,
+   "unit": "N*m",
+   "range": [
+    5.3e-05,
+    0.00053
+   ],
+   "model": "shell bending",
+   "source": "derived from skin.thickness_thigh and E = 0.1-1 MPa, nu = 0.5; no measurement exists",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "no measured value",
+   "status": "derived",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "fold wavelength behind the knee: Rupani 2025 DIC, DFAUST surfaces (female subjects)",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.density",
+   "tissue": "skin",
+   "parameter": "density",
+   "value": 1090,
+   "unit": "kg/m^3",
+   "range": [
+    1090,
+    1100
+   ],
+   "model": "inertia",
+   "source": "Woodard & White 1986, Br J Radiol 59:1209 (values as tabulated against ICRU 44 in PMC3396587, Table 10); ICRU 44 (1989) 1100",
+   "population": "reference adult tissue composition, sex not stated",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex effect found",
+   "status": "abstract",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.failure_stretch",
+   "tissue": "skin",
+   "parameter": "failure stretch along / across Langer lines (check)",
+   "value": 1.46,
+   "unit": "1",
+   "range": [
+    1.46,
+    1.52
+   ],
+   "model": "limit check; flag elements > 1.45",
+   "source": "Ni Annaidh et al. 2012, Ann Biomed Eng 40:1666, doi:10.1007/s10439-012-0542-3; JMBBM doi:10.1016/j.jmbbm.2011.08.016",
+   "population": "7 donors 81-97 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.visc_tau1",
+   "tissue": "skin",
+   "parameter": "QLV first time constant",
+   "value": 0.19,
+   "unit": "s",
+   "range": [
+    0.09,
+    0.29
+   ],
+   "model": "QLV / Kelvin-Voigt",
+   "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4372409",
+   "population": "excised thin specimens 211-671 um (species not checked)",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": true,
+   "fit_dataset": "FEMTO-ST CutiScan suction curves",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.friction_dry",
+   "tissue": "skin",
+   "parameter": "friction, dry skin against counter-materials",
+   "value": 0.5,
+   "unit": "1",
+   "range": [
+    0.2,
+    0.5
+   ],
+   "model": "Coulomb contact",
+   "source": "Derler & Gerhardt 2012, Tribol Lett 45:1, doi:10.1007/s11249-011-9854-y",
+   "population": "literature review, mixed populations and sites",
+   "tier": "C",
+   "adjustment": "no adjustment: Veijgen, Masen & van der Heide 2013, Tribol Lett 49:251, doi:10.1007/s11249-012-0062-1 report sex differences in friction that are mostly explained by hydration; no numeric sex factor",
+   "status": "abstract",
+   "tests": [
+    "T7",
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "found-not-applied"
+  },
+  {
+   "id": "skin.friction_moist",
+   "tissue": "skin",
+   "parameter": "friction, moist / sweaty skin",
+   "value": null,
+   "unit": "1",
+   "range": [
+    1.0,
+    null
+   ],
+   "model": "Coulomb contact",
+   "source": "Derler & Gerhardt 2012, Tribol Lett 45:1, doi:10.1007/s11249-011-9854-y",
+   "population": "review, mixed",
+   "tier": "C",
+   "adjustment": "no adjustment (as above)",
+   "status": "abstract",
+   "tests": [
+    "T6",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "found-not-applied"
+  },
+  {
+   "id": "skin.friction_textile",
+   "tissue": "skin",
+   "parameter": "friction, skin against textile (dynamic to static)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.25,
+    0.9
+   ],
+   "model": "Coulomb contact",
+   "source": "Tribol Lett 2021, doi:10.1007/s11249-021-01560-5 (chest 0.90/0.79, forearm 0.31/0.25); trousers vs seat: Lamsal 2023, doi:10.1007/s11340-023-01022-0",
+   "population": "in vivo, handheld device (population not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no thigh/buttock value; no sex factor",
+   "status": "abstract",
+   "tests": [
+    "T7",
+    "T9"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "skin.friction_self",
+   "tissue": "skin",
+   "parameter": "skin-on-skin friction (back of knee, calf on thigh)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.5,
+    1.0
+   ],
+   "model": "Coulomb self-contact",
+   "source": "bracket only, from Derler & Gerhardt 2012, Tribol Lett 45:1, doi:10.1007/s11249-011-9854-y",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap: never measured",
+   "status": "-",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "crease behaviour in T6 against Rupani 2025 and 3DCP/TUCH self-contact meshes; record the fit",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.E_long",
+   "tissue": "fascia",
+   "parameter": "tensile modulus along the limb (stiff sheet)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    55700000.0,
+    191900000.0
+   ],
+   "model": "anisotropic membrane shell (2-family HGO)",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226",
+   "population": "4 fresh-frozen donors aged 54-89, fascia lata, ex vivo, 0.5 %/s",
+   "tier": "D",
+   "adjustment": "no adjustment: no sex or age data on fascia moduli found; flagged (older donors)",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.E_trans",
+   "tissue": "fascia",
+   "parameter": "tensile modulus across (second sheet)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    4500000.0,
+    18900000.0
+   ],
+   "model": "anisotropic membrane shell",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226",
+   "population": "as above (one outlier 119.9 MPa excluded)",
+   "tier": "D",
+   "adjustment": "no adjustment (as above)",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_C1",
+   "tissue": "fascia",
+   "parameter": "HGO constant C1 (per-donor spread)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    110000.0,
+    680000.0
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_k11",
+   "tissue": "fascia",
+   "parameter": "HGO constant k11 (per-donor spread)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    2800000.0,
+    5700000.0
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_k21",
+   "tissue": "fascia",
+   "parameter": "HGO constant k21 (per-donor spread)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    42,
+    173
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_k12",
+   "tissue": "fascia",
+   "parameter": "HGO constant k12 (per-donor spread)",
+   "value": null,
+   "unit": "Pa",
+   "range": [
+    770000.0,
+    2000000.0
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_k22",
+   "tissue": "fascia",
+   "parameter": "HGO constant k22 (per-donor spread)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    115,
+    579
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.hgo_kappa",
+   "tissue": "fascia",
+   "parameter": "HGO constant kappa (per-donor spread)",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.0004,
+    0.19
+   ],
+   "model": "2-family HGO, elastic region <= 3-4 % strain",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 3",
+   "population": "4 donors 54-89 y, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment: donor mean and spread are the prior",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.sheet_angle",
+   "tissue": "fascia",
+   "parameter": "angle between the two collagen sheets",
+   "value": null,
+   "unit": "rad",
+   "range": [
+    1.309,
+    1.396
+   ],
+   "model": "fibre family 2 direction",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226",
+   "population": "4 donors, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.thickness_lata",
+   "tissue": "fascia",
+   "parameter": "fascia lata thickness (histology, without epimysium)",
+   "value": 0.000944,
+   "unit": "m",
+   "range": [
+    0.000788,
+    0.0011
+   ],
+   "model": "shell thickness",
+   "source": "histology cited in Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226; in vivo US 1.88 mm incl. epimysium: Stecco et al. 2011, doi:10.1007/s00276-011-0876-9",
+   "population": "cadaver histology (population not read); US: 22 volunteers",
+   "tier": "D",
+   "adjustment": "no adjustment: no sex comparison found; a female-only study reports thicker lower-limb fascia in young than old women (numbers not read)",
+   "status": "abstract",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "found-not-applied"
+  },
+  {
+   "id": "fascia.thickness_crural",
+   "tissue": "fascia",
+   "parameter": "crural fascia thickness (US)",
+   "value": null,
+   "unit": "m",
+   "range": [
+    0.00078,
+    0.00121
+   ],
+   "model": "shell thickness",
+   "source": "Pirri et al. 2021, Diagnostics 11:177, doi:10.3390/diagnostics11020177 (Table 2)",
+   "population": "15 healthy adults, in vivo US (sex split not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no sex data",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.thickness_epimysium",
+   "tissue": "fascia",
+   "parameter": "epimysial fascia thickness (tibialis anterior)",
+   "value": 0.00035,
+   "unit": "m",
+   "range": [
+    0.00027,
+    0.00043
+   ],
+   "model": "muscle surface layer",
+   "source": "Pirri et al. 2021, Diagnostics 11:177, doi:10.3390/diagnostics11020177 (Table 2)",
+   "population": "15 healthy adults, in vivo US",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.thickness_superficial",
+   "tissue": "fascia",
+   "parameter": "superficial (membranous) fascia thickness, limbs",
+   "value": null,
+   "unit": "m",
+   "range": [
+    0.0006,
+    0.001
+   ],
+   "model": "thin stiff shell tied to SAT",
+   "source": "2025 fascia review (Pirri et al., snippet)",
+   "population": "review of US studies",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.visc_residual_60s",
+   "tissue": "fascia",
+   "parameter": "residual stress fraction after 60 s relaxation",
+   "value": 0.56,
+   "unit": "1",
+   "range": null,
+   "model": "2-term Prony",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 2",
+   "population": "4 donors, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5",
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.visc_residual_300s",
+   "tissue": "fascia",
+   "parameter": "residual stress fraction after 300 s relaxation",
+   "value": 0.43,
+   "unit": "1",
+   "range": null,
+   "model": "2-term Prony",
+   "source": "Bonaldi et al. 2023, Bioengineering 10:226, doi:10.3390/bioengineering10020226 Table 2",
+   "population": "4 donors, ex vivo",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.prestress",
+   "tissue": "fascia",
+   "parameter": "in vivo pre-tension",
+   "value": null,
+   "unit": "Pa",
+   "range": null,
+   "model": "rest shape",
+   "source": "none found",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap: no measurement; replaces the 'shrinkage' knob",
+   "status": "-",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": true,
+   "fit_dataset": "no direct dataset; candidate: van Riel 2026 cuff MRI (thigh shape at 0 mmHg) - flagged",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "fascia.density",
+   "tissue": "fascia",
+   "parameter": "density",
+   "value": null,
+   "unit": "kg/m^3",
+   "range": null,
+   "model": "inertia",
+   "source": "no source read",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap",
+   "status": "-",
+   "tests": [
+    "T8"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_muscle.normal",
+   "tissue": "interface",
+   "parameter": "muscle <-> muscle, normal direction",
+   "value": null,
+   "unit": "-",
+   "range": null,
+   "model": "form: bilateral (no separation) sliding contact (FEBio sliding-elastic tension=true; Teran 2005 fascia links)",
+   "source": "Teran et al. 2005, doi:10.1109/TVCG.2005.42; Maas & Sandercock 2010, PMC2853902",
+   "population": "simulation + anatomy",
+   "tier": "M",
+   "adjustment": "no adjustment",
+   "status": "read in full (per tissue report)",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_muscle.k_t",
+   "tissue": "interface",
+   "parameter": "muscle <-> muscle tangential shear stiffness per area",
+   "value": null,
+   "unit": "Pa/m",
+   "range": [
+    3000000.0,
+    100000000.0
+   ],
+   "model": "cohesive tangential spring (areolar tissue, neurovascular tracts)",
+   "source": "seed range derived: loose-tissue modulus 3-5 kPa / thickness 0.05-1 mm (Mount Sinai abstract; Stecco)",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "no measured value",
+   "status": "derived",
+   "tests": [
+    "T5",
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Bojsen-Moller et al. 2004 (doi:10.1152/japplphysiol.00084.2004, n = 8, MG-Sol +3.7 / -1.7 mm) + Huijing 2011 soleus strain; thigh target missing",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_muscle.slide_check",
+   "tissue": "interface",
+   "parameter": "relative aponeurosis slide MG vs soleus (check)",
+   "value": null,
+   "unit": "m",
+   "range": [
+    -0.0017,
+    0.0037
+   ],
+   "model": "check",
+   "source": "Bojsen-Moller et al. 2004",
+   "population": "8 adults, in vivo ultrasound (sex not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no female data",
+   "status": "abstract",
+   "tests": [
+    "T5"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_fascia.friction",
+   "tissue": "interface",
+   "parameter": "muscle (epimysium) <-> deep fascia friction",
+   "value": null,
+   "unit": "1",
+   "range": null,
+   "model": "sliding, no separation, low friction (HA layer)",
+   "source": "none measured; HA layer: Stecco et al. 2011",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap",
+   "status": "-",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Wilke & Tenberg 2020, J Anat, doi:10.1111/joa.13283: muscle 5.70 +/- 2.43 mm vs superficial fascia 0.72 +/- 0.81 mm (n = 11, paper values; data not shared); Wang 2023 ITB shear strain",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_fascia.ha_film",
+   "tissue": "interface",
+   "parameter": "hyaluronan film thickness between fascia and muscle",
+   "value": 5e-05,
+   "unit": "m",
+   "range": null,
+   "model": "interface layer",
+   "source": "Roman et al. 2013, doi:10.7556/jaoa.2013.021 citing Stecco",
+   "population": "cadaver",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.fascia_fat.shear",
+   "tissue": "interface",
+   "parameter": "deep fascia <-> deep fat, tied through a compliant layer: shear stiffness",
+   "value": null,
+   "unit": "Pa/m",
+   "range": null,
+   "model": "tied (cohesive shear spring) or DAT as its own soft tets",
+   "source": "Stecco reappraisal of the superficial fascia; Wilke & Tenberg 2020, J Anat, doi:10.1111/joa.13283",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "no measured value",
+   "status": "-",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Wilke & Tenberg 2020, J Anat, doi:10.1111/joa.13283 coupling ratio (about 1:8)",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.skin_fat.slip_check",
+   "tissue": "interface",
+   "parameter": "skin + SAT + superficial fascia slip (check; modelled as embedded / tied)",
+   "value": 0.00072,
+   "unit": "m",
+   "range": [
+    0,
+    0.00153
+   ],
+   "model": "skin membrane embedded in the outer fat tets",
+   "source": "Wilke & Tenberg 2020, J Anat, doi:10.1111/joa.13283",
+   "population": "11 adults, in vivo US cross-correlation (sex not read)",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.septa.toe_strain",
+   "tissue": "interface",
+   "parameter": "retinacula cutis profundus tether: slack (toe) strain",
+   "value": null,
+   "unit": "1",
+   "range": null,
+   "model": "tension-only tethers SM -> deep fascia, rest length = local DAT thickness from her geometry",
+   "source": "none measured (Li et al. 2013 notes toe region)",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap",
+   "status": "-",
+   "tests": [
+    "T6",
+    "T9"
+   ],
+   "fit_required": true,
+   "fit_dataset": "Cereatti et al. 2017, J Biomech 62:5, doi:10.1016/j.jbiomech.2017.02.004 (thigh RMSD 7.6-8.4 mm, peak 23.4-28.4 mm, sit-to-stand up to 72.3 mm) + CAMS-Knee",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.septa.stiffness",
+   "tissue": "interface",
+   "parameter": "retinacula cutis tether stiffness (per region)",
+   "value": null,
+   "unit": "N/m",
+   "range": null,
+   "model": "tension-only tethers",
+   "source": "none measured",
+   "population": "-",
+   "tier": "N",
+   "adjustment": "gap",
+   "status": "-",
+   "tests": [
+    "T6",
+    "T9"
+   ],
+   "fit_required": true,
+   "fit_dataset": "as iface.septa.toe_strain",
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.septa.coherence_thigh",
+   "tissue": "interface",
+   "parameter": "septa orientation coherence, thigh (density prior)",
+   "value": 0.711,
+   "unit": "1",
+   "range": null,
+   "model": "tether layout prior",
+   "source": "Li & Ahn 2011, PLoS ONE 6:e23987, doi:10.1371/journal.pone.0023987",
+   "population": "25 adults, in vivo 10 MHz US (sex split not read)",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.gluteal_fold.anchor",
+   "tissue": "interface",
+   "parameter": "medial gluteal fold: dermis anchored to the ischium",
+   "value": null,
+   "unit": "-",
+   "range": null,
+   "model": "form: zero-length hard anchors, density fading laterally",
+   "source": "Si et al. 2024, Plast Reconstr Surg 154:241e, doi:10.1097/PRS.0000000000010723",
+   "population": "20 fresh female buttocks, dissection (ex vivo)",
+   "tier": "D",
+   "adjustment": "no adjustment: female source",
+   "status": "abstract",
+   "tests": [
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": false,
+   "note": "",
+   "sex_age_effect": "direct-female"
+  },
+  {
+   "id": "iface.muscle_bone.footprint_check",
+   "tissue": "interface",
+   "parameter": "quadriceps tendon footprint on the patella (check)",
+   "value": 0.0005025,
+   "unit": "m^2",
+   "range": [
+    0.000336,
+    0.000611
+   ],
+   "model": "tied over the full atlas footprint",
+   "source": "Knee 2023 cadaver 3D CT/MRI (via BVS mdl-37399632)",
+   "population": "cadavers (sex not read)",
+   "tier": "D",
+   "adjustment": "no adjustment: footprint comes from her warped atlas; female size difference not known",
+   "status": "abstract",
+   "tests": [
+    "T1"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.muscle_bone.ischial_slide",
+   "tissue": "interface",
+   "parameter": "gluteus maximus slide off the ischial tuberosity, seated (check)",
+   "value": 0.01374,
+   "unit": "m",
+   "range": null,
+   "model": "frictionless sliding over the ischial bursa",
+   "source": "Zappala et al. 2024, J Biomech 163:111913, doi:10.1016/j.jbiomech.2023.111913",
+   "population": "10 healthy subjects, semi-recumbent MR-DVC; built on Al-Dirini 2017 scans of 10 men",
+   "tier": "C",
+   "adjustment": "no adjustment: male-only data; no female value found; flagged",
+   "status": "abstract",
+   "tests": [
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.articular.friction",
+   "tissue": "interface",
+   "parameter": "bursa / articular cartilage friction",
+   "value": null,
+   "unit": "1",
+   "range": [
+    0.001,
+    0.01
+   ],
+   "model": "treated as frictionless",
+   "source": "cartilage tribology (as quoted in the link report)",
+   "population": "-",
+   "tier": "D",
+   "adjustment": "no adjustment",
+   "status": "unverified",
+   "tests": [
+    "T6",
+    "T7"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.patella.shift_max",
+   "tissue": "interface",
+   "parameter": "patella shift over flexion (check)",
+   "value": 0.003,
+   "unit": "m",
+   "range": null,
+   "model": "patella as a free body on quadriceps and patellar tendon springs, frictionless trochlear contact (Lenhart 2015)",
+   "source": "Nha et al. 2008, J Orthop Res, doi:10.1002/jor.20554",
+   "population": "8 knees, in vivo dual fluoroscopy + MRI, weight-bearing (sex not read)",
+   "tier": "C",
+   "adjustment": "no adjustment: no female tracking data found",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.patella.tilt_max",
+   "tissue": "interface",
+   "parameter": "patella tilt over flexion (check)",
+   "value": 0.105,
+   "unit": "rad",
+   "range": null,
+   "model": "as above",
+   "source": "Nha et al. 2008",
+   "population": "as above",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  },
+  {
+   "id": "iface.patella.lateral_max",
+   "tissue": "interface",
+   "parameter": "patella lateral displacement (check)",
+   "value": 0.006,
+   "unit": "m",
+   "range": null,
+   "model": "as above",
+   "source": "Nha et al. 2008",
+   "population": "as above",
+   "tier": "C",
+   "adjustment": "no adjustment",
+   "status": "abstract",
+   "tests": [
+    "T6"
+   ],
+   "fit_required": false,
+   "fit_dataset": null,
+   "flagged": true,
+   "note": "",
+   "sex_age_effect": "none-found"
+  }
+ ]
+}
