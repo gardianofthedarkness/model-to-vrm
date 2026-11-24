@@ -39,7 +39,7 @@ for src in ['truth'] + P['variants']:
         header['classes'][str(k)] = names.get(k, str(k))
     header['sources'][src] = out
     print(src, sum(o['nf'] for o in out.values()), 'triangles', flush=True)
-header['dice'] = P['people'][person]['dice']; header['token_mm'] = P['token_mm']
+header['dice'] = P['people'][person]['dice']; header['token_mm'] = {v: P['token_mm'][v] for v in P['variants']}; header['labels'] = P.get('labels', {})
 d = os.path.join(root, '3d'); os.makedirs(d, exist_ok=True)
 open(os.path.join(d, 'mesh.bin'), 'wb').write(b''.join(blobs)); json.dump(header, open(os.path.join(d, 'mesh.json'), 'w'))
 print('person', person, 'bytes', off)

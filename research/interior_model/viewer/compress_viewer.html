@@ -107,6 +107,7 @@ tr.cls.sel { background: var(--hl) }
 </div>
 
 <script>
+const vlab = (P, v) => P.labels?.[v] ?? `${P.token_mm[v]} mm`;
 const S = { meta: null, part: 'face', person: null, variant: null, plane: 'axial', slice: {}, sel: null, cache: new Map(), vols: {}, sort: 'thickness_mm', sortDir: 1, filter: '' };
 const PLANES = { axial: 'Axial', coronal: 'Coronal', sagittal: 'Sagittal' };
 const $ = id => document.getElementById(id);
@@ -163,7 +164,7 @@ function draw() {
   imgs.forEach(([c, img]) => c.getContext('2d').putImageData(img, 0, 0));
   $('sliceTxt').textContent = `${s + 1} / ${N}  ·  ${((s + 0.5) * S.meta.parts[S.part].voxel_mm).toFixed(0)} mm`;
   $('hE').textContent = body ? `${(100 * wrong / body).toFixed(1)}% of body` : '';
-  $('hT').textContent = PLANES[S.plane].toLowerCase(); $('hP').textContent = `${S.meta.parts[S.part].token_mm[S.variant]} mm tokens`;
+  $('hT').textContent = PLANES[S.plane].toLowerCase(); $('hP').textContent = S.meta.parts[S.part].token_mm[S.variant] ? `${vlab(S.meta.parts[S.part], S.variant)}${S.variant.startsWith('t') && S.variant !== 'tf' ? ' tokens' : ''}` : vlab(S.meta.parts[S.part], S.variant);
   $('errLegend').innerHTML = sel == null
     ? `<span><i class="sw" style="background:#eb463c"></i>reconstruction disagrees with truth</span><span><i class="sw" style="background:#343836"></i>agrees</span><span><i class="sw" style="background:repeating-linear-gradient(45deg,#464646 0 2px,#1c1c1c 2px 8px)"></i>outside the scan (unknown)</span>`
     : `<span><i class="sw" style="background:#ebebeb"></i>${cname(sel)} — found</span><span><i class="sw" style="background:#ff9628"></i>missed</span><span><i class="sw" style="background:#e146dc"></i>extra (not in truth)</span>`;
@@ -179,7 +180,7 @@ function segment(el, items, current, onPick) {
 function renderControls() {
   const parts = S.meta.parts, P = parts[S.part];
   segment($('partSeg'), Object.keys(parts).map(k => [k, k[0].toUpperCase() + k.slice(1)]), S.part, v => { if (v !== S.part) { S.part = v; S.person = null; S.variant = null; S.sel = null; S.slice = {}; load() } });
-  segment($('varSeg'), P.variants.map(v => [v, `${P.token_mm[v]} mm<small>${P.overall[v].median_dice.toFixed(2)}</small>`]), S.variant, v => { S.variant = v; load() });
+  segment($('varSeg'), P.variants.map(v => [v, `${vlab(P, v)}<small>${P.overall[v].median_dice.toFixed(2)}</small>`]), S.variant, v => { S.variant = v; load() });
   segment($('planeSeg'), Object.entries(PLANES), S.plane, v => { S.plane = v; renderControls(); setSliceRange(); draw() });
   const ps = $('person'); ps.innerHTML = Object.keys(P.people).map(c => `<option${c === S.person ? ' selected' : ''}>${c}</option>`).join('');
 }
@@ -196,7 +197,7 @@ function renderTable() {
   const P = S.meta.parts[S.part], rows = Object.entries(P.people[S.person].dice).map(([k, r]) => ({ k: +k, name: cname(+k), ...r }));
   const f = S.filter.toLowerCase(), key = S.sort, dir = S.sortDir;
   const list = rows.filter(r => !f || r.name.toLowerCase().includes(f)).sort((a, b) => { const x = a[key] ?? -1, y = b[key] ?? -1; return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir });
-  const head = [['name', 'Structure'], ['thickness_mm', 'mm'], ...P.variants.map(v => [v, P.token_mm[v] + ' mm'])];
+  const head = [['name', 'Structure'], ['thickness_mm', 'mm'], ...P.variants.map(v => [v, vlab(P, v)])];
   $('tbl').innerHTML = '<thead><tr>' + head.map(([k, t]) => `<th data-k="${k}">${t}${k === key ? (dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('') + '</tr></thead><tbody>'
     + list.map(r => `<tr class="cls${r.k === S.sel ? ' sel' : ''}" data-k="${r.k}"><td class="name"><i class="sw" style="background:rgb(${COL[r.k]})"></i>${r.name}</td><td class="n">${r.thickness_mm}</td>`
       + P.variants.map(v => `<td class="n ${dclass(r[v])}">${r[v]?.toFixed(2) ?? '–'}</td>`).join('') + '</tr>').join('') + '</tbody>';

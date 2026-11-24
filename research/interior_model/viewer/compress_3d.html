@@ -64,15 +64,17 @@ h1 { font-size: 14px; font-weight: 600; margin: 0 8px 0 0 }
   </header>
   <div id="list"></div>
 </aside>
-<div id="info">Drag to turn, pinch or scroll to zoom. Tap a structure to name it. The list's Dice is for this person at the chosen token size.</div>
+<div id="info">Drag to turn, pinch or scroll to zoom. Tap a structure to name it. The list's Dice is for this person and the chosen source.</div>
 <div id="loading">loading surfaces…</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const S = { src: 't4', compare: true, vis: new Set(), sel: null, filter: '' };
+const S = { src: 'tf', compare: true, vis: new Set(), sel: null, filter: '' };
 let H, BIN, groups = {}, mats = {}, skinMats = [];
+const vlab = v => H.labels?.[v] ?? H.token_mm[v] + ' mm';
+const kind = v => v === 'tf' ? 'transformer prediction' : v === 'nn' ? 'nearest-person copy' : 'reconstruction · ' + H.token_mm[v] + ' mm tokens';
 const hsl = (h, s, l) => new THREE.Color().setHSL(h, s, l);
 const colour = k => hsl((k * 0.61803398875) % 1, 0.72, 0.56);
 const dcls = d => d == null ? '' : d >= .8 ? 'd-good' : d >= .5 ? 'd-mid' : 'd-bad';
@@ -128,16 +130,16 @@ function views() {
 }
 function resize() {
   renderer.setSize(innerWidth, innerHeight); renderer.setScissor(0, 0, innerWidth, innerHeight); renderer.setClearColor(0x0f1211); renderer.clear(); const v = views()[0]; camera.aspect = v.w / v.h; camera.updateProjectionMatrix();
-  const tm = H.token_mm[S.src] + ' mm tokens', vs = views();
+  const vs = views();
   const lab = (el, v, txt) => { el.style.display = v ? '' : 'none'; if (!v) return; el.textContent = txt; el.style.left = (v.x + 14) + 'px'; el.style.top = (innerHeight - v.y - v.h + 60) + 'px' };
-  lab($('labL'), vs[0], S.compare ? 'truth' : (S.src === 'truth' ? 'truth' : 'reconstruction · ' + tm)); lab($('labR'), vs[1], 'reconstruction · ' + tm);
+  lab($('labL'), vs[0], S.compare ? 'truth' : (S.src === 'truth' ? 'truth' : kind(S.src))); lab($('labR'), vs[1], kind(S.src));
 }
 function loop() {
   requestAnimationFrame(loop); controls.update(); lightL.position.copy(camera.position); lightR.position.copy(camera.position);
   for (const v of views()) { renderer.setViewport(v.x, v.y, v.w, v.h); renderer.setScissor(v.x, v.y, v.w, v.h); renderer.setClearColor(v.k === 'L' ? 0x0f1211 : 0x121614); renderer.render(scenes[v.k], camera) }
 }
 function list() {
-  const d = H.dice, f = S.filter.toLowerCase(), src = S.src === 'truth' ? 't4' : S.src;
+  const d = H.dice, f = S.filter.toLowerCase(), src = S.src === 'truth' ? 'tf' : S.src;
   const keys = Object.keys(H.classes).filter(k => !f || H.classes[k].toLowerCase().includes(f)).sort((a, b) => (d[b]?.thickness_mm ?? 0) - (d[a]?.thickness_mm ?? 0));
   $('list').innerHTML = keys.map(k => { const dv = d[k]?.[src]; return `<div class="it${k === S.sel ? ' sel' : ''}" data-k="${k}"><input type="checkbox" ${S.vis.has(k) ? 'checked' : ''}><span class="sw" style="background:#${colour(+k).getHexString()}"></span><span class="nm" title="${H.classes[k]}">${H.classes[k]}</span><span class="d ${dcls(dv)}">${dv?.toFixed(2) ?? '–'}</span></div>` }).join('');
   $('list').querySelectorAll('.it').forEach(el => {
@@ -149,11 +151,11 @@ function pick(k) {
   S.sel = S.sel === k ? null : k; if (k && !S.vis.has(k)) S.vis.add(k);
   const d = H.dice[k] || {};
   $('info').innerHTML = S.sel == null ? 'Tap a structure to name it.' :
-    `<b>${H.classes[k]}</b> · ${d.thickness_mm ?? '?'} mm thick · Dice ${['t4', 't8', 't12'].map(v => `${H.token_mm[v]} mm <span class="${dcls(d[v])}">${d[v]?.toFixed(2) ?? '–'}</span>`).join(' · ')}`;
+    `<b>${H.classes[k]}</b> · ${d.thickness_mm ?? '?'} mm thick · Dice ${Object.keys(H.token_mm).map(v => `${vlab(v)} <span class="${dcls(d[v])}">${d[v]?.toFixed(2) ?? '–'}</span>`).join(' · ')}`;
   applyVis(); list();
 }
 function seg() {
-  const items = [['truth', 'Truth'], ...Object.keys(H.token_mm).map(v => [v, H.token_mm[v] + ' mm'])];
+  const items = [['truth', 'Truth'], ...Object.keys(H.token_mm).map(v => [v, vlab(v)])];
   $('srcSeg').innerHTML = ''; for (const [v, t] of items) { const b = document.createElement('button'); b.textContent = t; if (v === S.src) b.className = 'on'; b.onclick = () => { S.src = v; if (v === 'truth') S.compare = false; $('cmp').textContent = S.compare ? 'Single view' : 'Compare with truth'; seg(); place(); list() }; $('srcSeg').appendChild(b) }
 }
 const ray = new THREE.Raycaster(); let down = null;
@@ -165,12 +167,12 @@ renderer.domElement.addEventListener('pointerup', e => {
   const hits = ray.intersectObjects(root[v.k].children, true).filter(h => h.object.visible && h.object.userData.k && (S.sel == null || h.object.userData.k === S.sel || mats[h.object.userData.k].opacity > .5));
   if (hits.length) pick(hits[0].object.userData.k);
 });
-$('cmp').onclick = () => { if (S.src === 'truth') S.src = 't4'; S.compare = !S.compare; $('cmp').textContent = S.compare ? 'Single view' : 'Compare with truth'; seg(); place(); list() };
+$('cmp').onclick = () => { if (S.src === 'truth') S.src = 'tf'; S.compare = !S.compare; $('cmp').textContent = S.compare ? 'Single view' : 'Compare with truth'; seg(); place(); list() };
 $('toggleSide').onclick = () => { $('side').classList.toggle('hidden'); resize() };
 $('filter').oninput = e => { S.filter = e.target.value; list() };
 $('all').onclick = () => { Object.keys(H.classes).forEach(k => S.vis.add(k)); applyVis(); list() };
 $('none').onclick = () => { S.vis.clear(); S.sel = null; applyVis(); list() };
-$('worst').onclick = () => { const src = S.src === 'truth' ? 't4' : S.src; S.vis = new Set(Object.keys(H.classes).filter(k => H.dice[k]?.[src] != null).sort((a, b) => H.dice[a][src] - H.dice[b][src]).slice(0, 10)); S.sel = null; applyVis(); list() };
+$('worst').onclick = () => { const src = S.src === 'truth' ? 'tf' : S.src; S.vis = new Set(Object.keys(H.classes).filter(k => H.dice[k]?.[src] != null).sort((a, b) => H.dice[a][src] - H.dice[b][src]).slice(0, 10)); S.sel = null; applyVis(); list() };
 $('skin').oninput = e => { skinMats.forEach(m => m.opacity = +e.target.value); applyVis() };
 addEventListener('resize', resize);
 Promise.all([fetch('3d/mesh.json').then(r => r.json()), fetch('3d/mesh.bin').then(r => r.arrayBuffer())]).then(([h, b]) => {
