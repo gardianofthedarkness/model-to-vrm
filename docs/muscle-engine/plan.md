@@ -236,6 +236,24 @@ Each phase ends with its tests passing and a viewer. Costs are laptop time unles
 - Read the myoLegs XML for patella coupling.
 - *Pass:* T1–T4, and a solver decision made from measurements.
 
+**Phase 0 status (2026-11-24):**
+- E-MAT v1 done ([e-mat.md](e-mat.md)).
+- Han 2024 read from the dissertation (the TOG paper itself was not reachable): [han2024-notes.md](han2024-notes.md). Copy their
+  run-time network form and fat-layer geometry; do not copy their materials (uncited, 20–100× stiffer than living tissue) or
+  their active law (it changes rest shape only, so it fails T4).
+- Patella: myoLegs hangs the patella from the femur and drives its two translations and its tilt by 4th-order polynomials of
+  the knee angle (Rajagopal coupling, `myolegs_assets.xml` equality constraints). E-JOINT v0 reuses them, scaled to the elf.
+- **The warped atlas surfaces overlap** (`research/muscle_engine/thigh_overlap_survey.py`): every thigh surface is closed
+  and manifold, but 97 muscle–muscle and muscle–bone pairs overlap, up to 28 % of a muscle's vertices inside another structure
+  (adductors inside the femur, sartorius inside vastus medialis). So muscles cannot be meshed one by one; E-PACK must first
+  decide who owns each point, as a **labelled volume** — the same form the interior model will output.
+- Pack format v0 and the T1 check: `research/muscle_engine/pack_format.md`, `t1_pack_check.py`. On the old per-muscle
+  meshes T1 fails for four reasons: non-manifold boundary edges (1 700–2 300, from the Delaunay fill), self-intersection,
+  surface parts closer than the contact distance, and tets with a zero fibre. Newton keeps every tet (rule 6 passes).
+- Proposed mesher: wildmeshing 2.0 `simwild` (MIT, Windows wheel): one tet mesh from many closed surfaces, a region per
+  input by winding number, `resolve_overlaps` gives each overlap to the nearer structure, a sizing field per region, and
+  offsets for bands (fascia, skin). Needs the user's OK to install.
+
 **Phase 1, the thigh compartment.**
 - All thigh muscles together, sliding contact, fascia lata, fat, skin; patella coupling.
 - Static solver mode.
