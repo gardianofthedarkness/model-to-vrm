@@ -143,24 +143,88 @@ What fits a GTX 1650 is **kinematic**: pose the skeleton frame by frame, then re
 - **Straight chords are only lower bounds** for muscles that wrap (gluteals, piriformis). Level (i) needs wrapping surfaces before
   lengths can be compared with a muscle's working range.
 
-## 6. Next cheap tests (each minutes, local)
+## 6. Calibrated mapping and joint ranges (done, ~20 s CPU)
 
-1. **Calibration.**
-   - Fit ARDY's neutral standing frame to the elf's rest by bone directions.
-   - Re-run the test.
-   - **Pass:** standing reads near 0° on every axis, and muscle lengths near 1.
-2. **Whole-leg IK on the elf's DOFs.**
-   - Scipy least-squares on joint positions and bone directions, with Rajagopal or BSM ranges read from their .osim files.
-   - Report limit violations per clip.
+**Script:** `research/rig_stage/ardy_to_elf_leg_calibrated.py`.
+- **No T-pose assumption.** Each side's angles come from its own geometry:
+  - pelvis frame: upright;
+  - thigh frame: the mechanical axis (hip centre to knee centre) plus the knee hinge axis. On the elf the hinge axis is the fitted
+    condyle axis; on ARDY it is its knee's own rotation axis, carried by the thigh;
+  - shin: knee to ankle.
+- **Angle convention:** hip angles are OpenSim's intrinsic flexion → adduction → rotation, with left-side signs mirrored as in
+  the model.
+- **Placement:** the elf's femur and shin are placed so that the elf's own angles equal ARDY's. The check error is 0.000°.
+- **Ranges:** read from Rajagopal 2016 (`Rajagopal2016.osim`, opensim-models). Hip flexion −30…120°, adduction −50…30°, rotation
+  −40…40°, knee 0…120°.
+
+![calibrated](img/ardy_to_elf_leg_calibrated.png)
+
+| Clip | Hip flexion | Hip adduction | Hip internal rotation | Knee | Frames outside Rajagopal ranges |
+|---|---|---|---|---|---|
+| sit | 8 → 85° | −24 → −3° | −29 → 12° | 15 → 102° | 0 |
+| walk + wave | −17 → 32° | −17 → 7° | −24 → −4° | 5 → 76° | 0 |
+| pockets (standing) | 1 → 7° | −5 → 0° | **−24 → −16°** | 8 → 13° | 0 |
+
+**Findings:**
+- **Elf's rest:** hip flexion −6.3°, adduction 6.6°, internal rotation 6.7°, knee −5.9° (slight hyperextension). This comes from the
+  fitted bones: geometry, not an assumption.
+- **ARDY's stance, not an artefact.** The 16–24° of external hip rotation while standing survives the calibration. ARDY's knee
+  flexion plane really turns out from its pelvis: toes and knees out. Mapped onto the elf, which rests at 6.7° internal, that is
+  about 25° of external rotation. The deep external rotators (quadratus femoris, gemelli, piriformis) are then 20–50 % shorter
+  than at rest. The figures are straight-line chords, and the elf's rest rotation depends on its fitted knee axis, so treat the
+  size as indicative.
+- **Ranges:** none of these clips leave Rajagopal's ranges.
+- **Output:** the per-frame rigid transforms of thigh and shank are saved (`<clip>_leg_transforms.npz`) and drive the flesh test
+  below.
+
+## 7. Flesh on the bones (done, 71 s on the GTX 1650)
+
+> **Invalid results (found 2026-11-24).** fTetWild writes its tets with the winding Newton reads as negative volume, and
+> Newton's `add_tetrahedron` silently drops such tets. This run's model held **0** tets, so the free flesh never moved and the leg
+> never bent: the numbers below describe pinned nodes moving past nodes that stood still.
+>
+> `elf_leg_flesh.py` now reorders the tets and checks the tet count. Corrected run: 241 s, inverted tets ≤ 1.4 %, volume
+> 0.974–1.005, skin flips ≤ 5.9 % (knee crease, hip). See `docs/sit-physics-research-handoff.md` §6, test 1.
+
+**Script:** `research/rig_stage/elf_leg_flesh.py`. Figure: `research/rig_stage/elf_leg_flesh_figure.py`.
+- **Skin:** the leg's own skin piece, 49k vertices.
+- **Tetrahedra:** fTetWild with edge = half the median flesh thickness (11.5 mm), giving 20k tets.
+- **Pins:** nodes nearer a bone than the skin ride with that bone; the hip cut cap is fixed.
+- **Solver:** Newton VBD neo-Hookean, E 30 kPa, ν 0.45 (the textbook values `flesh/newton_flesh.py` uses); 10 substeps × 10
+  iterations.
+- **Drive:** the calibrated `sit` clip.
+- **Skin read-out:** the model's own skin, embedded in the tets.
+
+![flesh](img/elf_leg_flesh.png)
+
+**Results:**
+- **Above the ankle, at the deepest frame** (hip 85°, knee 102°): **3.4–4.6 % of skin triangles flip, and p99 edge stretch is
+  3–4×.** The nearest-vertex binding of the one-leg audit, at a milder hip 60° / knee 90°, gives 8.3 % and 23×. So the flesh
+  approach is clearly better, but not clean.
+- **Where it fails:**
+  - **Foot:** below the ankle, 4–11 % flip, even at the first frame. The coarse tets cannot follow the thin toes, so toe skin
+    embedded outside its tet is extrapolated.
+  - **Knee:** flips are spread over the front of the knee (8 %, skin over the kneecap), the back of the knee (7 %, the crease,
+    with self-contact off) and the shin and thigh (6.5 %).
+  - **Inverted tets:** about 13 % of tets read as inverted from the first frame. Either the 11.5 mm tets are too coarse next to
+    pinned bone nodes, or fTetWild left slivers. The run did not save the tet mesh, so this is **not yet diagnosed**.
+  - **Volume:** total volume stayed at 1.000.
+- **Not tested:** ankle and foot motion (foot bones ride with the shin) and gravity.
+
+## 8. Next cheap tests (each minutes, local)
+
+1. **Flesh resolution and contact.**
+   - Save the tet mesh, and diagnose the inverted tets: slivers, or wrong pins.
+   - Re-run with tets sized from the skin's own edge length near thin parts (toes), and with Newton's particle self-contact on for
+     the knee crease.
+   - **Pass:** flips above the ankle under 1 % through the whole sit clip.
+2. **Whole-leg IK with ankle and subtalar joints**, using the Rajagopal ranges, so the foot moves too.
 3. **Wrapping.**
    - Install `mujoco`, after asking.
    - Build an MJCF of the elf's pelvis and leg: bodies at the fitted joints; spatial tendons from the attachment patches over a
      sphere at the femur head and a cylinder at the knee.
    - Compare tendon lengths with the chords.
 4. **Shoulder and forearm.**
-   - Same as tests 1–3 for the arm: clavicle and scapula motion shared out from ARDY's Shoulder plus Arm rotation, and pronation
-     split from ForeArm plus Hand.
+   - The same for the arm: clavicle and scapula motion shared out from ARDY's Shoulder plus Arm rotation, and pronation split from
+     ForeArm plus Hand.
    - The elf's fitted wrist under the warmer is unreliable (devlog), so check it first.
-5. **Flesh.**
-   - The `sit` clip through Newton on a tetrahedral mesh of the elf's leg, bones kinematic.
-   - Compare with the binding audit in `docs/rig-stage-strategies.md`.
