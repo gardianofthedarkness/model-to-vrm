@@ -28,13 +28,18 @@ CFG = dict(kv.split('=') for kv in os.environ.get('CFG', '').split(',') if kv)
 PARTS = CFG.get('parts', 'pelvis').split('+'); D = int(CFG.get('d', 384)); LAYERS = int(CFG.get('layers', 8)); DRAWS = int(CFG.get('draws', 3)); VALN = int(CFG.get('valn', 8))
 PID = {'pelvis': 0, 'face': 1}
 
+_up = [None]
 def upload(folder, path):
+    """checkpoint upload in the background: a slow or stuck upload must never stop training (the job uploads everything again at the end)."""
     repo = os.environ.get('REPO')
     if not repo: return
-    from huggingface_hub import HfApi
-    for attempt in range(4):
-        try: HfApi().upload_folder(folder_path=folder, path_in_repo=path, repo_id=repo, repo_type='dataset', commit_message='flow ' + path); return
-        except Exception as ex: log('upload retry', attempt, type(ex).__name__); time.sleep(60)
+    if _up[0] is not None and _up[0].is_alive(): log('earlier upload still running; skipped this one'); return
+    def go():
+        from huggingface_hub import HfApi
+        try: HfApi().upload_folder(folder_path=folder, path_in_repo=path, repo_id=repo, repo_type='dataset', commit_message='flow ' + path)
+        except Exception as ex: log('upload failed', type(ex).__name__)
+    import threading; _up[0] = threading.Thread(target=go, daemon=True); _up[0].start()
+def save(obj, f): torch.save(obj, f + '.tmp'); os.replace(f + '.tmp', f)                                   # whole-file swap: an upload in flight keeps reading the old file
 
 class Flow(nn.Module):
     def __init__(s, fdim, C, ncmax, d=384, layers=8):
@@ -155,8 +160,8 @@ if __name__ == '__main__':
         gv = torch.Generator(device=DEV); gv.manual_seed(12345)
         with torch.no_grad(): vl = float(np.mean([fm_loss(ema, k, (j + 0.5) / 4, 0.0, gv, False).item() for k in sp['val'] for j in range(4)]))
         state['hist'].append((it, round(tl, 4), round(vl, 4))); state['step'] = it + 1; better = vl < state['best']
-        if better: state['best'], state['best_step'] = vl, it; torch.save(dict(state_dict=ema.state_dict(), fdim=fdim, C=C, ncmax=ncmax, d=D, layers=LAYERS, norm={p: [x.tolist() for x in v] for p, v in norm.items()}, step=it, val=vl), bestf)
-        torch.save(dict(net=net.state_dict(), ema=ema.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), state=state), last)
+        if better: state['best'], state['best_step'] = vl, it; save(dict(state_dict=ema.state_dict(), fdim=fdim, C=C, ncmax=ncmax, d=D, layers=LAYERS, norm={p: [x.tolist() for x in v] for p, v in norm.items()}, step=it, val=vl), bestf)
+        save(dict(net=net.state_dict(), ema=ema.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), state=state), last)
         json.dump(dict(res, curve=state['hist'], best_step=state['best_step'], steps=steps), open(os.path.join(out, 'progress.json'), 'w'))
         log('step', it, 'train %.4f val %.4f%s' % (tl, vl, ' *' if better else ''), 'peak GB %.2f' % (torch.cuda.max_memory_allocated() / 1e9), '%.2f s/step' % ((time.time() - t2) / max(1, it + 1 - start)))
         if not lim: upload(out, 'm16_full/' + OUT)
