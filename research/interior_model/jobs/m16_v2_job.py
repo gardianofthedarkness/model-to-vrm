@@ -5,7 +5,7 @@
 autoencoders, the cached preparation and any earlier checkpoint of the same run (so a restarted job continues), runs
 the trainer with live log, and uploads the output folder (weights, predictions, JSON, log) at the end; the trainer
 itself uploads checkpoints at every validation. env: COMMIT, STAGE (run name, default v2), TF, TF_STEPS, LIMIT,
-TEST_LIMIT. args: <repo>"""
+TEST_LIMIT, PART=prep (fill and upload the preparation cache only, in parallel). args: <repo>"""
 import os, sys, time, subprocess, urllib.request, shutil
 from huggingface_hub import HfApi, snapshot_download
 t0 = time.time()
@@ -21,6 +21,14 @@ snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, all
 for d in ('face_compress', 'pelvis_compress', 'prep_v2_TF%s' % TF, OUT):
     if os.path.isdir(os.path.join(ROOT, 'm16_full', d)): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
 log('data ready; cached preparations', len(os.listdir(os.path.join(ROOT, 'prep_v2_TF%s' % TF))) if os.path.isdir(os.path.join(ROOT, 'prep_v2_TF%s' % TF)) else 0)
+if os.environ.get('PART') == 'prep':                                                                     # preparation only: one process per vCPU, each takes every n-th person; then upload the cache
+    n = os.cpu_count() or 4; cache = os.path.join(ROOT, 'prep_v2_TF%s' % TF)
+    ps = [subprocess.Popen([sys.executable, '-u', 'transformer_v2.py', ROOT, '1', TF], cwd=code, env=dict(os.environ, PREP_ONLY='1', SHARD='%d/%d' % (i, n))) for i in range(n)]
+    rc = [q.wait() for q in ps]; log('prep exit codes', rc, 'files', len(os.listdir(cache)))
+    for attempt in range(6):
+        try: api.upload_folder(folder_path=cache, path_in_repo='m16_full/prep_v2_TF%s' % TF, repo_id=repo, repo_type='dataset', commit_message='m16 v2 preparation cache'); break
+        except Exception as ex: log('upload retry', attempt, type(ex).__name__); time.sleep(120)
+    log('SUMMARY prep done'); sys.exit(max(rc))
 e = dict(os.environ, OUT=OUT, REPO=repo); lines = []
 p = subprocess.Popen([sys.executable, '-u', 'transformer_v2.py', ROOT, os.environ.get('TF_STEPS', '40000'), TF] + ([LIMIT] if LIMIT else []), cwd=code, env=e, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 for l in p.stdout: lines.append(l); print(l.rstrip()[:1500], flush=True)

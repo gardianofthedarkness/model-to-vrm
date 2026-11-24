@@ -14,7 +14,9 @@ went wrong (it painted small structures at several times their volume and lost t
 4. Mirror images, face only: each training head is also used mirrored about the head frame's midplane with left/right
    label names swapped. This only says a mirrored head is as plausible a head as the original; it does not make any
    prediction symmetric. The pelvis and torso are not mirrored (organs are one-sided).
-5. Housekeeping: per-person preparation is cached on disk (and in the data repo when REPO is set); validation on all
+5. Housekeeping: per-person preparation is cached on disk (and in the data repo when REPO is set) and can be made
+   beforehand on any machine (PREP_ONLY=1, SHARD=i/n for parallel processes); labels and loss weights are read from
+   disk as needed so the run fits a 15 GB machine; validation on all
    validation people 40 times per run; last and best checkpoints are saved (and uploaded) at every validation, and a
    run restarts from the last one.
 Test as before: surface only, per-class Dice; reported raw (comparable with version 1) and fair (point 3).
@@ -101,11 +103,20 @@ if __name__ == '__main__':
         else:
             p = Part(name, L, mm, F, ae, NC, pid); p.W = weight_map(p.L, mm, F * mm, bone[name])
             np.savez_compressed(f, idx=p.idx, feat=p.feat, pos=p.pos, code=p.code.astype(np.float16), W=p.W)
+        if MM:                                                                                             # keep labels and weights on disk, not in RAM
+            for k in ('L', 'W'):
+                g = os.path.join(MM, '%s_%s_%s.npy' % (key, name, k))
+                if not os.path.exists(g): np.save(g, getattr(p, k))
+                setattr(p, k, np.load(g, mmap_mode='r'))
         p.miss = sorted(set(range(7, NC)) - set(known)) if known is not None else []                         # named classes this person's source never drew
         return p
-    t1 = time.time(); data = {}; base = {}; made = len(os.listdir(cache))
+    PREP_ONLY = os.environ.get('PREP_ONLY') == '1'; SH = [int(x) for x in os.environ.get('SHARD', '0/1').split('/')]   # PREP_ONLY: fill the cache and stop (any machine with a GPU); SHARD i/n: every n-th person
+    MM = None if PREP_ONLY else os.path.join(root, 'mmap_v2'); MM and os.makedirs(MM, exist_ok=True)
+    t1 = time.time(); data = {}; base = {}; made = len(os.listdir(cache)); count = 0
     for s in sp:
         for c in list(sp[s]):
+            count += 1
+            if PREP_ONLY and count % SH[1] != SH[0]: continue
             parts = []
             if c in pidx['people']: ae, F, _, NC = aes['pelvis']; parts.append(prep(c, 'pelvis', np.load(os.path.join(root, 'pelvis_v1', c + '.npz'))['labels'], 3.0, F, ae, NC, 0, None))
             if c in fidx['heads']:
@@ -114,6 +125,7 @@ if __name__ == '__main__':
                 if s == 'train':
                     m = c + '~m'; data[m] = [prep(m, 'face', mirror(L, fidx['window_lo_mm'][0], 1.0, swap), 1.0, F, ae, NC, 1, [int(swap[k]) for k in kn])]; base[m] = c; sp[s].append(m)
             data[c] = parts; base[c] = c
+    if PREP_ONLY: log('prepared shard', SH, len(data), 'entries in', round(time.time() - t1), 's'); sys.exit(0)
     ntok = [sum(len(p.idx) for p in v) for v in data.values()]
     res['prep_seconds'] = round(time.time() - t1); res['tokens_per_person'] = dict(median=int(np.median(ntok)), max=int(max(ntok)), min=int(min(ntok)))
     log('prepared', len(data), 'people incl. mirrors in', res['prep_seconds'], 's; tokens', res['tokens_per_person'])
