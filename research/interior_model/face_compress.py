@@ -15,7 +15,8 @@ import torch, torch.nn as nn
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 UNK = 255
-AMP = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else None   # GTX 1650: fp16 measured 2.4x slower than fp32 (no tensor cores)
+_cc, _nm = torch.cuda.get_device_capability(), torch.cuda.get_device_name()
+AMP = torch.bfloat16 if _cc[0] >= 8 else torch.float16 if _cc[0] == 7 and 'GTX' not in _nm else None   # GTX 16xx: no tensor cores, fp32 faster
 
 def make_ae(NC, F, C, emb=16, w=32):
     def blk(a, b, s=1): return nn.Sequential(nn.Conv3d(a, b, 3, stride=s, padding=1), nn.GroupNorm(8, b), nn.SiLU(), nn.Conv3d(b, b, 3, padding=1), nn.GroupNorm(8, b), nn.SiLU())
@@ -91,8 +92,8 @@ if __name__ == '__main__':
                 out[i, :c_.shape[0], :c_.shape[1], :c_.shape[2]] = np.where(c_ == UNK, NC, c_)
             return torch.tensor(out, device=dev)
         net = make_ae(NC, F, C).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
-        scaler = torch.amp.GradScaler(enabled=False); lossf = nn.CrossEntropyLoss(weight=wts, ignore_index=NC); valb = [crop(sp['val'], 2) for _ in range(6)]; best = (np.inf, None, 0)
-        torch.cuda.reset_peak_memory_stats(); t1 = time.time(); bs = 2
+        scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); lossf = nn.CrossEntropyLoss(weight=wts, ignore_index=NC); valb = [crop(sp['val'], 2) for _ in range(6)]; best = (np.inf, None, 0)
+        torch.cuda.reset_peak_memory_stats(); t1 = time.time(); bs = int(os.environ.get('BS', '2'))
         for it in range(steps):
             net.train(); x = crop(sp['train'], bs); y = x.clone()
             with torch.autocast('cuda', dtype=AMP or torch.float32, enabled=AMP is not None): loss = lossf(net(x).float(), y)

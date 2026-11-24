@@ -18,7 +18,8 @@ from face_compress import make_ae
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 UNK = 255; DEV = 'cuda'
-AMP = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float32   # GTX 1650: fp16 is slower than fp32
+_cc, _nm = torch.cuda.get_device_capability(), torch.cuda.get_device_name()
+AMP = torch.bfloat16 if _cc[0] >= 8 else torch.float16 if _cc[0] == 7 and 'GTX' not in _nm else torch.float32   # GTX 16xx: no tensor cores
 
 def sdf(L, mm):
     from scipy.ndimage import distance_transform_edt
