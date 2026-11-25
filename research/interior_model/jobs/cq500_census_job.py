@@ -1,8 +1,8 @@
 # /// script
 # dependencies = ["huggingface_hub>=1.0", "hf_xet", "numpy", "scipy", "nibabel", "SimpleITK", "TotalSegmentator", "dcm2niix"]
 # ///
-"""Face coverage of CQ500 head CTs (plan v8 section 14.1), on a sample. Downloads one archive of the CQ500 copy on
-Hugging Face (neurosentry/cq500) inside the job; per patient takes the series with the most slices, and records numbers
+"""Face coverage of CQ500 head CTs (plan v8 section 14.1), on a sample. Downloads archives from the private CQ500 copy
+(<repo>/raw, copied from neurosentry/cq500) inside the job; per patient takes the series with the most slices, and records numbers
 only: the head's extent from top to bottom, whether the face has a nose, and from TotalSegmentator's licensed
 craniofacial model whether skull, mandible, upper teeth and maxillary sinuses are present, and whole or cut by the scan's
 edge. No images leave the job; nothing is kept after it. env: ARCHIVES (comma list, default qct01), PER (patients per
@@ -39,17 +39,26 @@ if __name__ == '__main__':
     key = os.environ.get('TOTALSEG_LICENSE')
     if key: r = subprocess.run(['totalseg_set_license', '-l', key], capture_output=True, text=True); log('licence set:', r.returncode == 0)
     for arc in os.environ.get('ARCHIVES', 'qct01').split(','):
-        p = hf_hub_download('neurosentry/cq500', arc + '.tar', repo_type='dataset', local_dir='/data/cq'); log(arc, 'downloaded', round(os.path.getsize(p) / 1e9, 2), 'GB')
+        p = hf_hub_download(repo, 'raw/' + arc + '.tar', repo_type='dataset', local_dir='/data/cq'); log(arc, 'downloaded', round(os.path.getsize(p) / 1e9, 2), 'GB')
         d = '/data/cq/x_' + arc; os.makedirs(d, exist_ok=True)
         with tarfile.open(p) as t: t.extractall(d)
         os.remove(p)                                                                            # nothing is kept: the archive goes as soon as it is unpacked
-        pats = sorted({os.path.relpath(os.path.dirname(f), d).split(os.sep)[0] for f in glob.glob(d + '/**/*', recursive=True) if os.path.isfile(f)})
-        log(arc, 'patients', len(pats)); rows = []
+        series = {}                                                                          # folder holding slices -> number of files
+        for root_, _, fs in os.walk(d):
+            if fs: series[root_] = len(fs)
+        def pid(path):                                                                       # the path part naming the patient (CQ500 folders carry 'CQ500'), else the first part
+            parts = os.path.relpath(path, d).split(os.sep); hit = [q for q in parts if 'cq500' in q.lower()]
+            return hit[-1].split()[0] if hit else parts[0]
+        best = {}
+        for sd, n in series.items():
+            k = pid(sd)
+            if n > best.get(k, ('', 0))[1]: best[k] = (sd, n)
+        pats = sorted(best); log(arc, 'patients', len(pats), 'series folders', len(series)); rows = []
         for pt in pats[:PER]:
             r = dict(patient=pt)
             try:
                 shutil.rmtree('w', ignore_errors=True); os.makedirs('w/nii', exist_ok=True)
-                subprocess.run(['dcm2niix', '-z', 'y', '-o', 'w/nii', '-f', '%s_%%s' % 'ct', os.path.join(d, pt)], capture_output=True)
+                r['slices'] = best[pt][1]; subprocess.run(['dcm2niix', '-z', 'y', '-o', 'w/nii', '-f', 'ct_%s', best[pt][0]], capture_output=True)
                 cands = [(f, os.path.getsize(f)) for f in glob.glob('w/nii/*.nii.gz')]
                 if not cands: r['error'] = 'no series converted'; rows.append(r); continue
                 nii = max(cands, key=lambda x: x[1])[0]; r['series'] = os.path.basename(nii)
