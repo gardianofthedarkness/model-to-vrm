@@ -22,7 +22,7 @@ import os, sys, json, time, math, numpy as np
 import torch, torch.nn as nn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import make_ae
-from transformer_smoke import tiles, decode, encode, AMP, UNK, DEV, log
+from transformer_smoke import tiles, dec_tile, decode, encode, AMP, UNK, DEV, log
 from scipy import ndimage as ndi
 CFG = dict(kv.split('=') for kv in os.environ.get('CFG', '').split(',') if kv)
 PARTS = CFG.get('parts', 'pelvis').split('+'); D = int(CFG.get('d', 384)); LAYERS = int(CFG.get('layers', 8)); DRAWS = int(CFG.get('draws', 3)); VALN = int(CFG.get('valn', 8))
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     def to_labels(e, z):
         ae, F, _ = aes[e.name]; grid = base(e).copy(); grid[(slice(None),) + tuple(e.idx.T)] = (z * norm[e.name][1] + norm[e.name][0]).T
         P = np.zeros([g * F for g in e.G], np.uint8)
-        for a, b, m in tiles(e.G, 24, 4):
+        for a, b, m in tiles(e.G, *dec_tile(F)):
             with torch.autocast('cuda', dtype=AMP, enabled=AMP != torch.float32): lg = decode(ae, torch.tensor(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]], device=DEV)).float().argmax(1)[0].cpu().numpy()
             P[(a[0] + m[0]) * F:b[0] * F, (a[1] + m[1]) * F:b[1] * F, (a[2] + m[2]) * F:b[2] * F] = lg[m[0] * F:, m[1] * F:, m[2] * F:]
         return P

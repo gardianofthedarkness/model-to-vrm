@@ -33,6 +33,12 @@ def tiles(shape, tile, ov):
                 a = [min(max(0, q * (tile - ov)), max(0, n - tile)) for q, n in zip((i, j, k), shape)]; b = [min(n, aa + tile) for aa, n in zip(a, shape)]
                 yield a, b, [ov // 2 if q > 0 else 0 for q in (i, j, k)]
 
+CROP = 64                                                                                      # the autoencoders' training crop (voxels), face_compress.py
+def dec_tile(F):
+    """decode tile in tokens = the training crop. GroupNorm normalises over the whole tile, so decoding tiles larger than the
+    crops it was trained on changes the output (found 2026-11-25: 24-token tiles erased the v3 face autoencoder's sinus)."""
+    return CROP // F, 2
+
 @torch.no_grad()
 def encode(ae, L, NC, F):
     """code grid of a whole window, tiled (tiles multiple of F)."""
@@ -180,7 +186,7 @@ if __name__ == '__main__':
         for p in parts:
             n = len(p.idx); grid = np.zeros_like(p.code); grid[(slice(None),) + tuple(p.idx.T)] = pred[o:o + n].T; o += n; ae, F, _, NC = aes[p.name]
             P = np.zeros(p.L.shape, np.uint8)
-            for a, b, m in tiles(p.G, 24, 4):
+            for a, b, m in tiles(p.G, *dec_tile(F)):
                 with torch.no_grad(), torch.autocast('cuda', dtype=AMP, enabled=AMP != torch.float32): lg = decode(ae, torch.tensor(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]], device=DEV)).float().argmax(1)[0].cpu().numpy()
                 P[(a[0] + m[0]) * F:b[0] * F, (a[1] + m[1]) * F:b[1] * F, (a[2] + m[2]) * F:b[2] * F] = lg[m[0] * F:, m[1] * F:, m[2] * F:]
             body = (p.L > 0) & (p.L < UNK); P[~body] = 0; Lt = np.where(p.L == UNK, 0, p.L)

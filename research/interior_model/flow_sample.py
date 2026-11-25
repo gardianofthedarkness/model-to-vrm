@@ -39,9 +39,9 @@ def sample(net, ck, part, idx, feat, pos, shell, NC, age, sex, steps, seed):
 @torch.no_grad()
 def to_labels(ae, F, G, idx, codes, base):
     """base: the autoencoder's codes of the shell-only volume, used in tokens without body (zeros there make the decoder paint filler classes)."""
-    from transformer_smoke import tiles, decode, DEV
+    from transformer_smoke import tiles, dec_tile, decode, DEV
     grid = base.copy(); grid[(slice(None),) + tuple(idx.T)] = codes.T; P = np.zeros([g * F for g in G], np.uint8)
-    for a, b, m in tiles(G, 24, 4):
+    for a, b, m in tiles(G, *dec_tile(F)):
         lg = decode(ae, torch.tensor(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]], device=DEV)).float().argmax(1)[0].cpu().numpy()
         P[(a[0] + m[0]) * F:b[0] * F, (a[1] + m[1]) * F:b[1] * F, (a[2] + m[2]) * F:b[2] * F] = lg[m[0] * F:, m[1] * F:, m[2] * F:]
     return P
