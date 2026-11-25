@@ -21,7 +21,8 @@ J = (np.load(jf)['X'][:5] - o) @ A.T * s
 hs = sorted(c for c, v in fi['heads'].items() if v['source'] == 'hanseg'); split = {c: ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train') for i, c in enumerate(hs)}
 split.update({c: v['split'] for c, v in fi['heads'].items() if v['source'] == 'ts'})
 LM = ['auditory_canal_left', 'auditory_canal_right', 'eye_left', 'eye_right', 'mandible', 'teeth_upper', 'teeth_lower']; cen = {k: [] for k in LM}; occ = None; n = 0; G = 4
-for c in sorted(fi['heads']):
+REUSE = json.load(open(os.environ['REUSE'])) if os.environ.get('REUSE') else None                      # the real-head references do not depend on the character: reuse an earlier export
+for c in ([] if REUSE else sorted(fi['heads'])):
     f = os.path.join(root, 'face_v1_headframe', c + '.npz')
     if split.get(c) != 'train' or not os.path.exists(f): continue
     L = np.load(f)['labels']; b = ((L > 0) & (L < UNK))[:L.shape[0] // G * G, :L.shape[1] // G * G, :L.shape[2] // G * G]
@@ -29,16 +30,16 @@ for c in sorted(fi['heads']):
     cm = ndi.center_of_mass(np.ones(L.shape, bool), L, [ids[k] for k in LM]); cnts = np.bincount(L.ravel(), minlength=256)
     for k, m in zip(LM, cm):
         if cnts[ids[k]] >= 10: cen[k].append(np.array(m) + lo + 0.5)
-occ /= n; v, f, _, _ = measure.marching_cubes(np.pad(occ, 1), 0.5); v = (v - 1 + 0.5) * G + lo
+if not REUSE: occ /= n; v, f, _, _ = measure.marching_cubes(np.pad(occ, 1), 0.5); v = (v - 1 + 0.5) * G + lo
 out = dict(scale_mm_per_unit=s, window=[lo.tolist(), hi.tolist()], elf=dict(v=np.round(P, 1).ravel().tolist(), f=Fall.ravel().tolist(), hair=hair.astype(int).tolist()),
            keypoints=dict(zip(['nose', 'left eye', 'right eye', 'left ear', 'right ear'], np.round(J, 1).tolist())),
-           average_head=dict(v=np.round(v, 1).ravel().tolist(), f=f.ravel().tolist(), people=n),
-           landmarks={k: dict(mean=np.round(np.mean(c_, 0), 1).tolist(), std=np.round(np.std(c_, 0), 1).tolist(), heads=len(c_)) for k, c_ in cen.items()})
+           average_head=REUSE['average_head'] if REUSE else dict(v=np.round(v, 1).ravel().tolist(), f=f.ravel().tolist(), people=n),
+           landmarks=REUSE['landmarks'] if REUSE else {k: dict(mean=np.round(np.mean(c_, 0), 1).tolist(), std=np.round(np.std(c_, 0), 1).tolist(), heads=len(c_)) for k, c_ in cen.items()})
 if genf != '-':
     Pg = np.load(genf)['draws'][0]; g = {}
     for k in ('eye_left', 'eye_right', 'mandible', 'teeth_upper'):
         ii = np.argwhere(Pg == ids[k])
         if len(ii): g[k] = dict(centre=np.round(ii.mean(0) + lo + 0.5, 1).tolist(), ml=round(len(ii) / 1000, 1), points=np.round(ii[:: max(1, len(ii) // 1500)] + lo + 0.5).astype(int).ravel().tolist())
     out['generated'] = g
-os.makedirs(os.path.join(viewer, 'elf'), exist_ok=True); json.dump(out, open(os.path.join(viewer, 'elf', 'frame.json'), 'w'))
-print('elf mesh', nv, 'vertices', len(Fall), 'faces; average head', len(v), 'vertices from', n, 'people;', {k: (out['landmarks'][k]['mean'], out['landmarks'][k]['std']) for k in LM}); print('her keypoints', out['keypoints'])
+os.makedirs(os.path.join(viewer, 'elf'), exist_ok=True); json.dump(out, open(os.path.join(viewer, 'elf', os.environ.get('OUTNAME', 'frame.json')), 'w'))
+print('elf mesh', nv, 'vertices', len(Fall), 'faces'); print('her keypoints', out['keypoints'])

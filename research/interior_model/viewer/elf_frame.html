@@ -11,6 +11,7 @@
   label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; } .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
   table { border-collapse: collapse; font-size: 12px; margin-top: 6px; width: 100%; } td, th { padding: 2px 6px 2px 0; text-align: left; white-space: nowrap; } th { color: var(--mut); font-weight: 500; }
   .views { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; } button { background: #232830; color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; font: inherit; }
+  .pick { font-size: 12.5px; margin: 4px 0 8px; } .pick a { color: #8fb8ff; } .pick a.on { color: var(--fg); font-weight: 600; text-decoration: none; }
   details summary { cursor: pointer; color: var(--mut); margin-top: 6px; }
 </style></head><body>
 <canvas id="c"></canvas>
@@ -18,6 +19,7 @@
   <h1>Elf head in the model's head frame</h1>
   <p>Drag to turn, pinch or scroll to zoom. Units are millimetres at the size the model saw her.</p>
   <div class="views"><button data-v="front">Front</button><button data-v="side">Her left side</button><button data-v="top">Top</button><button data-v="back">Back</button></div>
+  <div class="pick">Frame: <a href="?" data-f="key">from keypoints (first try)</a> · <a href="?sym" data-f="sym">from her symmetry plane</a></div>
   <div id="layers"></div>
   <details open><summary>Where her landmarks sit against real heads</summary><table id="tab"></table>
   <p>"Real" is the mean position over the training heads, with its spread. Ear canals and eyes define the frame: the origin is midway between the ear canals, x runs to her right, y forward to the eyes, z up.</p></details>
@@ -26,7 +28,9 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-fetch('elf/frame.json').then(r => r.json()).then(D => {
+const SYM = location.search.includes('sym'), FRAME = SYM ? 'elf/frame_sym.json' : 'elf/frame.json', GEN = SYM ? 'elf/gen_sym_frame.json' : 'elf/gen_keypoint_frame.json';
+document.querySelectorAll('.pick a').forEach(a => { if ((a.dataset.f === 'sym') === SYM) a.classList.add('on') });
+Promise.all([fetch(FRAME).then(r => r.json()), fetch(GEN).then(r => r.json()).catch(() => [])]).then(([D, GM]) => {
   const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x14161a);
   const camera = new THREE.PerspectiveCamera(35, 1, 1, 6000), controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
@@ -39,18 +43,19 @@ fetch('elf/frame.json').then(r => r.json()).then(D => {
   // her mesh, split into skin and hair/cloth faces
   const hair = D.elf.hair, F = D.elf.f, fs = [], fh = [];
   for (let i = 0; i < F.length; i += 3) (hair[F[i]] + hair[F[i + 1]] + hair[F[i + 2]] >= 2 ? fh : fs).push(F[i], F[i + 1], F[i + 2]);
-  add('Her skin', '#e9c9a8', mesh(D.elf.v, fs, new THREE.MeshStandardMaterial({ color: 0xe9c9a8, roughness: .8, side: THREE.DoubleSide })));
-  add('Her hair and loose cloth', '#7c6fd6', mesh(D.elf.v, fh, new THREE.MeshStandardMaterial({ color: 0x7c6fd6, roughness: .9, side: THREE.DoubleSide, transparent: true, opacity: .55 })));
-  add('Average real head (' + D.average_head.people + ' people)', '#5fd0c0', mesh(D.average_head.v, D.average_head.f, new THREE.MeshStandardMaterial({ color: 0x5fd0c0, roughness: .9, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide })));
+  add('Her skin', '#e9c9a8', mesh(D.elf.v, fs, new THREE.MeshStandardMaterial({ color: 0xe9c9a8, roughness: .8, side: THREE.DoubleSide, transparent: true, opacity: .3, depthWrite: false })));
+  add('Her hair and loose cloth', '#7c6fd6', mesh(D.elf.v, fh, new THREE.MeshStandardMaterial({ color: 0x7c6fd6, roughness: .9, side: THREE.DoubleSide, transparent: true, opacity: .25, depthWrite: false })), false);
+  add('Average real head (' + D.average_head.people + ' people)', '#5fd0c0', mesh(D.average_head.v, D.average_head.f, new THREE.MeshStandardMaterial({ color: 0x5fd0c0, roughness: .9, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide })), false);
   const ball = (p, r, c) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), new THREE.MeshStandardMaterial({ color: c, roughness: .4 })); m.position.set(...p); return m };
   const NAMES = { auditory_canal_left: 'left ear canal', auditory_canal_right: 'right ear canal', eye_left: 'left eye', eye_right: 'right eye', mandible: 'jaw bone', teeth_upper: 'upper teeth', teeth_lower: 'lower teeth' };
   const gReal = new THREE.Group();
   for (const [k, o] of Object.entries(D.landmarks)) { const e = ball(o.mean, 1, 0x38d39f); e.scale.set(Math.max(2, o.std[0]), Math.max(2, o.std[1]), Math.max(2, o.std[2])); e.material.transparent = true; e.material.opacity = .45; gReal.add(e); gReal.add(ball(o.mean, 2.2, 0x38d39f)) }
   add('Real landmark positions (dot = mean, blob = spread)', '#38d39f', gReal);
   const gKp = new THREE.Group(); for (const p of Object.values(D.keypoints)) gKp.add(ball(p, 3, 0xff5a5a)); add('Her detected keypoints (nose, eyes, ears)', '#ff5a5a', gKp);
-  if (D.generated) { const gG = new THREE.Group(); const cols = { eye_left: 0xffe14d, eye_right: 0xffe14d, mandible: 0xffa33c, teeth_upper: 0xffffff };
-    for (const [k, o] of Object.entries(D.generated)) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(o.points), 3)); gG.add(new THREE.Points(g, new THREE.PointsMaterial({ color: cols[k], size: 2.2 }))) }
-    add('What the model generated: eyes (yellow), jaw (orange), upper teeth (white)', '#ffe14d', gG, false) }
+  const groups = {};                                                                        // the whole generated interior, one switch per group
+  for (const o of GM) { const g = groups[o.group] || (groups[o.group] = { grp: new THREE.Group(), ml: 0, col: o.colour }); g.ml += o.ml;
+    g.grp.add(mesh(o.v, o.f, new THREE.MeshStandardMaterial({ color: new THREE.Color(...o.colour), roughness: .6, side: THREE.DoubleSide, flatShading: true }))) }
+  for (const [n, g] of Object.entries(groups)) add('Generated: ' + n.toLowerCase() + ' (' + Math.round(g.ml) + ' ml)', '#' + new THREE.Color(...g.col).getHexString(), g.grp, n !== 'Bones and teeth' ? true : false);
   const gAx = new THREE.Group(); const line = (a, b, c) => { const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]); return new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })) };
   gAx.add(line([0, 0, 0], [130, 0, 0], 0xff4444), line([0, 0, 0], [0, 130, 0], 0x44dd44), line([0, 0, 0], [0, 0, 130], 0x5599ff), ball([0, 0, 0], 3, 0xffffff));
   add('Frame: origin (white), x to her right (red), y forward (green), z up (blue)', '#ffffff', gAx);
