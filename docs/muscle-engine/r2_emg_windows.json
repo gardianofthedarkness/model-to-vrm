@@ -1,0 +1,15 @@
+{
+ "_note": "Published EMG on-windows in running, % of the gait cycle from foot strike (toe-off ~35-40 %), from tissue-research/running-emg-r2.md. Windows are where the EMG is above the stride mean (Chumanov 2012, 20 F / 25 M, 2.9 m/s) or the reported active phase; exact on/off tables are paywalled, so these are coarse.",
+ "vaslat_l": [[90, 100], [0, 15]],
+ "recfem_l": [[0, 15]],
+ "bflh_l": [[80, 100]],
+ "semiten_l": [[80, 100]],
+ "glmax2_l": [[90, 100], [0, 15]],
+ "glmed1_l": [[90, 100], [0, 15]],
+ "gasmed_l": [[86, 100], [0, 25]],
+ "soleus_l": [[86, 100], [0, 25]],
+ "tibant_l": [[40, 100], [0, 10]],
+ "_sources": {"vaslat_l": "Montgomery 1994; Chumanov 2012", "recfem_l": "Montgomery 1994; Chumanov 2012", "bflh_l": "Chumanov 2012", "semiten_l": "Chumanov 2012",
+              "glmax2_l": "Lieberman 2006; Chumanov 2012", "glmed1_l": "Chumanov 2012", "gasmed_l": "Gazendam & Hof 2007; Chumanov 2012", "soleus_l": "Gazendam & Hof 2007",
+              "tibant_l": "Chumanov 2012; Reber 1993"}
+}

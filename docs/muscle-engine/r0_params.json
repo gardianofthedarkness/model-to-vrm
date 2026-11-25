@@ -1,0 +1,18 @@
+{
+ "note": "R0 flesh runtime settings for a woman about 28, from tissue-research/flesh-dynamics-r0.md. Every value names its source; STAND-IN marks a compartment with no data of its own. Tensed frequency = relaxed x 1.4 (active/passive frequency ratio 1.17-1.40, Christensen 2023, upper end = full activation); tensed damping = relaxed x 1.3 (pre-activation raised damping 25-30 %, Zhang 2019). Most vibration data are male or mixed (see the research file).",
+ "bulge_active_full": 0.20,
+ "bulge_source": "front thigh thickness +20 % rest to max contraction (Chauhan 2013 [M]; Sekir 2022 [mixed]); one value for every muscle in R0 (calf can reach +40 %, side of thigh ~0 %)",
+ "compartments": {
+  "quadriceps": {"f_relaxed_hz": 9.5, "f_tensed_hz": 13.3, "zeta_relaxed": 0.14, "zeta_tensed": 0.18,
+                 "source": "8-11 Hz relaxed (Wakeling & Nigg 2001 via Friesenbichler 2013 [mixed]); 13.8-14.2 Hz in landing (Zhang 2019 [M]); zeta 0.12-0.16 converted from Zhang 2019 decay rates"},
+  "hamstrings": {"f_relaxed_hz": 12.9, "f_tensed_hz": 18.0, "zeta_relaxed": 0.095, "zeta_tensed": 0.12,
+                 "source": "16-20 Hz in landing, taken as tensed (Zhang 2019 [M]); relaxed = tensed / 1.4; zeta 0.08-0.11 converted from Zhang 2019"},
+  "calf": {"f_relaxed_hz": 10.5, "f_tensed_hz": 14.7, "zeta_relaxed": 0.15, "zeta_tensed": 0.2,
+           "source": "10.5 +- 2.7 Hz in running (Behling 2021 [mixed, 27 y]); zeta reported 0.1-0.7, low end taken (0.66 is a running-fit upper bound) - UNCERTAIN"},
+  "adductors": {"f_relaxed_hz": 9.5, "f_tensed_hz": 13.3, "zeta_relaxed": 0.14, "zeta_tensed": 0.18, "source": "STAND-IN: quadriceps values (no adductor data found)"},
+  "gluteals": {"f_relaxed_hz": 9.5, "f_tensed_hz": 13.3, "zeta_relaxed": 0.14, "zeta_tensed": 0.18, "source": "STAND-IN: quadriceps values (no buttock wobble data found)"},
+  "shank_front": {"f_relaxed_hz": 10.5, "f_tensed_hz": 14.7, "zeta_relaxed": 0.15, "zeta_tensed": 0.2, "source": "STAND-IN: calf values"},
+  "shank_side": {"f_relaxed_hz": 10.5, "f_tensed_hz": 14.7, "zeta_relaxed": 0.15, "zeta_tensed": 0.2, "source": "STAND-IN: calf values"},
+  "default": {"f_relaxed_hz": 9.5, "f_tensed_hz": 13.3, "zeta_relaxed": 0.14, "zeta_tensed": 0.18, "source": "STAND-IN: quadriceps values"}
+ }
+}

@@ -1,6 +1,7 @@
 """Writes the runnable notebooks (re-run this after changing a step):  python build_notebooks.py
   pipeline.ipynb        one model in -> skeleton, materials, contacts, flesh islands; every step's pictures inline
   anatomy_slices.ipynb  Z-Anatomy atlas -> critical cross-sections -> fitted to every body segment of a model
+  flesh_runtime.ipynb   R0 + R2 (docs/muscle-engine/runtime-plan.md): ARDY clip -> muscle effort -> live flesh runtime -> video
 Open in VS Code, pick the kernel E:\\splat\\.venv\\Scripts\\python.exe, run cells top to bottom. Each step cell only runs the
 step when its outputs are missing (set FORCE = True in a cell to redo it); logs go to <out>/logs/<step>.log."""
 import json, os
@@ -137,5 +138,47 @@ if FORCE or not os.path.exists(sim):          # ~7 min on this laptop
     sh([BLENDER, '-b', '-P', A('show_limb_sim.py'), '--', sim, os.path.join(out, 'forearm_sim')])
 show(os.path.join(out, 'forearm_sim_*_a.png'), width=300); show(os.path.join(out, 'forearm_sim_*_b.png'), width=300)
 show(os.path.join(out, 'forearm_sim_cut_*.png'), width=400)''')]
-for name, cells in (('pipeline.ipynb', P), ('anatomy_slices.ipynb', A)):
+R = [('markdown', '''
+# Live flesh runtime (R0 + R2)
+ARDY text-to-motion -> the elf's leg -> muscle effort from the motion alone (ground reaction estimated from the motion,
+MyoSuite static optimisation, the model's own activation dynamics) -> the small runtime (bulge + jiggle that stiffens with
+effort, settings in docs/muscle-engine/r0_params.json) -> A (plain skinning) vs B side by side.  Plan:
+docs/muscle-engine/runtime-plan.md.  Each step only runs when its outputs are missing (FORCE = True redoes it).
+'''), ('code', HELPERS + r'''
+PROMPT = 'A person jogs forward, then jumps up and lands.'; NAME = 'jogjump'; DURATION = 6
+ARDY_OUT = r'E:\figures\ardy'; FD = r'E:\figures\elf_pipe\anatomy_dense'; MD = r'E:\figures\elf_pipe'; R0 = r'E:\figures\elf_pipe\rig_stage\r0'
+PYA = r'E:\splat\.venv-ardy\Scripts\python.exe'; PYM = r'E:\splat\.venv-myo\Scripts\python.exe'
+RS = lambda *p: os.path.join(REPO, 'research', 'rig_stage', *p); PARAMS = os.path.join(REPO, 'docs', 'muscle-engine', 'r0_params.json')
+os.makedirs(R0, exist_ok=True); os.environ['PYTHONPATH'] = os.path.join(REPO, 'model_to_vrm', 'common')
+'''), ('markdown', '## 1. ARDY clip (prompt encoded once on the CPU, ~16 GB RAM; motion on the GPU)'),
+('code', '''FORCE = False
+clip = os.path.join(ARDY_OUT, 'outputs', NAME + '.npz')
+if FORCE or not os.path.exists(clip):
+    sh([PYA, os.path.join(REPO, 'model_to_vrm', 'motion', 'ardy_run.py'), 'encode', PROMPT])
+    sh([PYA, os.path.join(REPO, 'model_to_vrm', 'motion', 'ardy_run.py'), 'gen', PROMPT, '--model', 'soma', '--duration', str(DURATION), '--seed', '0', '--output', clip[:-4]])
+print('clip', clip, os.path.exists(clip))'''),
+('markdown', '## 2. The clip on the elf\'s left leg (calibrated joint angles; ranges from myoLegs)'),
+('code', '''FORCE = False
+trf = os.path.join(R0, NAME + '_leg_transforms.npz'); rng = os.path.join(R0, 'myolegs_ranges.osim')
+if not os.path.exists(rng): raise SystemExit('write myolegs_ranges.osim first (see r0_clip_activations.py notes)')
+if FORCE or not os.path.exists(trf): sh([PY, RS('ardy_to_elf_leg_calibrated.py'), FD, R0, rng, clip])'''),
+('markdown', '## 3. R2: muscle effort from the motion alone, checked against published running EMG (red bars)'),
+('code', '''FORCE = False
+act = os.path.join(R0, 'act2_' + NAME + '.npz')
+if FORCE or not os.path.exists(act): sh([PYM, RS('r0_clip_activations.py'), clip, ARDY_OUT, act])
+sh([PY, RS('r2_activation_picture.py'), act, os.path.join(R0, 'r2_' + NAME + '.png'), os.path.join(REPO, 'docs', 'muscle-engine', 'r2_emg_windows.json')])
+show(os.path.join(R0, 'r2_' + NAME + '.png'), width=900)'''),
+('markdown', '## 4. R0: the runtime (A plain skinning, B bulge + jiggle), its cost on the GPU'),
+('code', '''FORCE = False
+run = os.path.join(R0, NAME + '_run')
+if FORCE or not os.path.exists(os.path.join(run, 'r0_skin.npz')): sh([PYS, '-u', RS('r0_flesh.py'), FD, MD, clip, trf, act, PARAMS, run])
+print(open(os.path.join(run, 'r0_flesh.json')).read()[:1500]); sh([PYS, RS('r0_runtime_bench.py')])'''),
+('markdown', '## 5. Video: thigh and buttock close-up, A | B | B - A (mm); ~10 min on the GTX 1650'),
+('code', '''FORCE = False
+frames = os.path.join(R0, NAME + '_frames'); mp4 = os.path.join(R0, NAME + '_closeup.mp4')
+if FORCE or not os.path.exists(mp4):
+    os.environ['FOCUS'] = 'upper'; sh([PYS, RS('r0_render.py'), os.path.join(run, 'r0_skin.npz'), frames, 'backside', '1'])
+    sh([PY, RS('r0_video.py'), frames, mp4, '60', '1'])
+show(os.path.join(frames, 'f0168.png'), width=900); print('video:', mp4)''')]
+for name, cells in (('pipeline.ipynb', P), ('anatomy_slices.ipynb', A), ('flesh_runtime.ipynb', R)):
     json.dump(nb(cells), open(os.path.join(HERE, name), 'w', encoding='utf-8'), indent=1); print('wrote', name)

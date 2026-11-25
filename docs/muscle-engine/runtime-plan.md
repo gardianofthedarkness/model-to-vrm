@@ -71,3 +71,43 @@ Every phase gets a notebook in `notebooks/` and pictures as it goes.
 - Not needed for now: a converged fine-mesh anatomy sim with sliding contact everywhere; it is far beyond 60 Hz and most
   of it never shows.
 - Later option: run the teacher once over many generated bodies and learn the settings, instead of once per character.
+
+## Results so far (2026-11-24)
+
+Notebook: `notebooks/flesh_runtime.ipynb` (ARDY clip → muscle effort → runtime → video).
+
+### R0, proof: passed for cost and smoothness
+
+- Clip: ARDY "A person jogs forward, then jumps up and lands." (6 s, 29 flight frames) on the elf's left leg and hip.
+- Runtime B on top of plain skinning A: bulge (constant-volume shortening + cited active thickening) and one damped
+  wobble per muscle compartment whose stiffness and damping follow the compartment's effort. Settings:
+  `r0_params.json`, from `tissue-research/flesh-dynamics-r0.md` (mostly male or mixed data; adductor and buttock wobble
+  use thigh-front values as stand-ins).
+- **Cost (GTX 1650):** B's per-vertex work 0.30 ms at the leg's 47k vertices, 0.86 ms at 1M; the wobble oscillators
+  0.26 ms in numpy (`r0_runtime_bench.py`).
+- **Smooth skin:** the leg skin is 60 texture patches; joined at coincident points into one surface. A uses bone-heat
+  weights (Baran & Popović 2007). Worst skin stretch at the deepest bend 36× → 5.6× (p99 4.3× → 1.7×).
+- **Offsets:** median 0.4 mm, up to ~8 mm; compartment wobble peaks 3.5–5.6 mm (the elf is about half human size).
+- **Known gap, left for R4/R6:** the back of the knee collapses when bent (back-side skin moves ~16 mm, calf girth
+  −3…−9 %): plain skinning has no crease and no calf–hamstring contact. The rest shape matches the original model.
+
+![R0 close-up](../img/r0_closeup_f168.png)
+![Knee: original vs skinned](../img/r0_knee_vs_original.png)
+
+### R2, muscle effort from motion: first pass
+
+- **Ground reaction from the motion itself** (Ren, Jones & Howard 2008): the free root's required force and moment
+  are shared among heel and toe points of the feet ARDY labels planted, inside the friction pyramid (NNLS); forefoot
+  load goes to the foot segment (metatarsal heads), not the toes. Feet carry 1.0 BW standing, up to 3.3 BW landing;
+  before, an invisible root force carried 40–60 % of the weight.
+- **Activation dynamics:** the model's own (MuJoCo muscle, 10 / 40 ms): the drive needed to follow the static
+  optimisation is capped to [0, 1] and played forward.
+- **Foot:** turns about the axis through the malleoli tips (Inman 1976) by ARDY's ankle angle.
+- **Against published running EMG** (`r2_emg_windows.json`, from `tissue-research/running-emg-r2.md`; Chumanov 2012,
+  Gazendam & Hof 2007): vasti, rectus femoris, gluteus maximus and medius, gastrocnemius and soleus fire at foot strike /
+  early stance, tibialis anterior in swing, as published. Misses: hamstrings barely fire in late swing (published peak
+  80–100 % of the cycle); gluteus medius and tibialis anterior saturate where runners use about a third to a half.
+- **ARDY's own limit:** in flight the clip's hips need a median 0.7 BW that nothing provides (a kinematic generator
+  does not respect ballistic flight); measured and shown, not hidden.
+
+![R2 vs EMG](../img/r2_activation_emg.png)
