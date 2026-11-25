@@ -85,7 +85,7 @@ if __name__ == '__main__':
     names = {'face': {v: k for k, v in fidx['ids'].items()}, 'pelvis': dict(enumerate(pidx['classes']))}
     NCS = {'face': max(fidx['ids'].values()) + 1, 'pelvis': len(pidx['classes'])}; ncmax = max(NCS.values())
     aes = {}
-    for part, ck in (('face', os.path.join(root, 'face_compress', 'autoencoder_t%d.pt' % TF)), ('pelvis', os.path.join(root, 'pelvis_compress', 'autoencoder_t12.pt'))):
+    for part, ck in (('face', os.path.join(root, os.environ.get('FACE_AE_DIR', 'face_compress'), 'autoencoder_t%d.pt' % TF)), ('pelvis', os.path.join(root, 'pelvis_compress', 'autoencoder_t12.pt'))):
         if part not in PARTS: continue
         c = torch.load(ck, map_location=DEV); ae = make_ae(NCS[part], c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
         for p in ae.parameters(): p.requires_grad_(False)

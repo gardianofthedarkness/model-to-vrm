@@ -15,12 +15,13 @@ parts = dict(kv.split('=') for kv in os.environ.get('CFG', '').split(',') if kv)
 code = 'code'; os.makedirs(code, exist_ok=True)
 for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join(code, f))
-for r in (HS, repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*' if 'face' in parts else 'face_v1_headframe/index.json'], local_dir=ROOT, max_workers=16)
-snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*' if 'pelvis' in parts else 'pelvis_v1/index.json', 'm16_full/face_compress/autoencoder_*.pt',
-                  'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/%s/last.pt' % OUT, 'm16_full/%s/flow_f1.pt' % OUT] + ['m16_full/prep_v2_TF%s/*_%s.npz' % (TF, p) for p in parts])
-for d in ('face_compress', 'pelvis_compress', 'prep_v2_TF%s' % TF, OUT):
+for r in (HS, repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*' if 'face' in parts and os.environ.get('PREP', 'prep_v2').startswith('prep_v2') else 'face_v1_headframe/index.json'], local_dir=ROOT, max_workers=16)
+PREP = os.environ.get('PREP', 'prep_v2_TF%s' % TF); FAE = os.environ.get('FACE_AE_DIR', 'face_compress')                    # PREP=prep_v3_TF8 FACE_AE_DIR=face_compress_v3 for the v3 data
+snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*' if 'pelvis' in parts and PREP.startswith('prep_v2') else 'pelvis_v1/index.json', 'm16_full/%s/autoencoder_*.pt' % FAE,
+                  'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/%s/last.pt' % OUT, 'm16_full/%s/flow_f1.pt' % OUT] + ['m16_full/%s/*_%s.npz' % (PREP, p) for p in parts])
+for d in (FAE, 'pelvis_compress', PREP, OUT):
     if os.path.isdir(os.path.join(ROOT, 'm16_full', d)): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
-log('data ready; cached preparations', len(os.listdir(os.path.join(ROOT, 'prep_v2_TF%s' % TF))))
+log('data ready; cached preparations', len(os.listdir(os.path.join(ROOT, PREP))))
 e = dict(os.environ, OUT=OUT, REPO=repo); lines = []
 p = subprocess.Popen([sys.executable, '-u', 'flow_f1.py', ROOT, os.environ.get('TF_STEPS', '4000'), TF] + ([LIMIT] if LIMIT else []), cwd=code, env=e, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 for l in p.stdout: lines.append(l); print(l.rstrip()[:2500], flush=True)
