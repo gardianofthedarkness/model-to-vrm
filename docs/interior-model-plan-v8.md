@@ -285,3 +285,33 @@ Findings:
   name the patches. Thickness and stiffness per sheet come from the literature.
 - F9 septa and tendons: from the atlas muscles fitted to the predicted bones and named muscles, the same fit that places
   the expression muscles. Score the septa with 12.1's script against the population guess.
+
+## 13. The v3 face "failure" was a decoding bug, 2026-11-25
+
+The full v3 run (40,000 steps, L40S) scored the face below nearest person: 0.216 against 0.269. Its sinus, teeth and oral
+cavity were nearly absent. A chain of checks found the cause:
+- The model was as bad on heads it trained on as on test heads. Its stored codes, decoded, reached 0.67. So it was not
+  overfitting, and the targets were there.
+- **Root cause: decode tile size.** The autoencoders use GroupNorm, which normalises over the whole tile. They were trained
+  on 64-voxel crops, but sampling and scoring decoded in 24-token tiles (192 voxels at 8 mm tokens). The same codes for one
+  test head give sinus 0.90 in 8-token tiles and 0.26–0.37 in 24-token tiles (`tile_check.py`). F1's autoencoder is less
+  sensitive, so F1 looked fine. Its scores were still underestimates.
+- Code noise is not the issue: all three autoencoders keep their Dice under added code noise (`code_fragility.py`).
+- Fix: decode in tiles the size of the training crop, `transformer_smoke.dec_tile` (face 8 tokens, pelvis 16). Commit 6fa77cc.
+
+A/B on identical v3 face data (face only, 10,000 steps, test heads, one draw / majority of 3; nearest person 0.269):
+
+| Arm | Old decoding | Fixed decoding | Sinus | Oral cavity | Hair cleared |
+|---|---|---|---|---|---|
+| A: v3 face autoencoder | 0.177 / 0.154 | 0.265 / 0.266 | 0.61 | 0.31 | 49% |
+| B: F1 face autoencoder | 0.237 / 0.264 | **0.280 / 0.323** | 0.65 | 0.62 | 96% |
+| C: tissue types (new autoencoder) | 0.509 / 0.521 | 0.572 / 0.598 (nearest 0.597) | air 0.47 | — | 81% |
+
+Decisions and notes:
+- Keep F1's face autoencoder for named classes for now. It generates better, especially on covered heads.
+- Tissue types (user direction, section 14 to come): level with nearest person on clean heads, ahead on covered heads
+  (0.515 against 0.422). Eyes (0.63 against 0.73) and lean (0.58 against 0.65) lag. Fat under the skin got worse with the
+  fixed tiles (0.47 to 0.36).
+- Next autoencoder: make it independent of tile size (no GroupNorm, or a norm with fixed statistics) and encode in
+  crop-sized tiles too. The data preparation still encodes in 96-voxel tiles.
+- Lesson: an autoencoder's own reconstruction score must use the same encode and decode path as sampling.
