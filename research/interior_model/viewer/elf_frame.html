@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Elf head frame check</title>
+<style>
+  :root { --bg: #14161a; --fg: #e8e6e1; --mut: #9aa0a8; --panel: rgba(24,27,32,.88); --line: #2c313a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #panel { position: fixed; left: max(10px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); max-width: min(330px, calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  #panel h1 { font-size: 15px; margin: 0 0 6px; } #panel p { margin: 6px 0; color: var(--mut); font-size: 12.5px; }
+  label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; } .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  table { border-collapse: collapse; font-size: 12px; margin-top: 6px; width: 100%; } td, th { padding: 2px 6px 2px 0; text-align: left; white-space: nowrap; } th { color: var(--mut); font-weight: 500; }
+  .views { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; } button { background: #232830; color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; font: inherit; }
+  details summary { cursor: pointer; color: var(--mut); margin-top: 6px; }
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>Elf head in the model's head frame</h1>
+  <p>Drag to turn, pinch or scroll to zoom. Units are millimetres at the size the model saw her.</p>
+  <div class="views"><button data-v="front">Front</button><button data-v="side">Her left side</button><button data-v="top">Top</button><button data-v="back">Back</button></div>
+  <div id="layers"></div>
+  <details open><summary>Where her landmarks sit against real heads</summary><table id="tab"></table>
+  <p>"Real" is the mean position over the training heads, with its spread. Ear canals and eyes define the frame: the origin is midway between the ear canals, x runs to her right, y forward to the eyes, z up.</p></details>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+fetch('elf/frame.json').then(r => r.json()).then(D => {
+  const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x14161a);
+  const camera = new THREE.PerspectiveCamera(35, 1, 1, 6000), controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x333a44, 0.8)); const dl = new THREE.DirectionalLight(0xffffff, 0.7); scene.add(dl);
+  // frame (x to her right, y forward, z up) -> three (-x, z, y): she faces the default camera
+  const root = new THREE.Group(); root.matrixAutoUpdate = false; root.matrix.set(-1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1); scene.add(root);
+  const mesh = (v, f, mat) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3)); g.setIndex(new THREE.BufferAttribute(new Uint32Array(f), 1)); g.computeVertexNormals(); return new THREE.Mesh(g, mat) };
+  const layers = [];
+  const add = (name, colour, obj, on = true) => { obj.visible = on; root.add(obj); layers.push({ name, colour, obj, on }) };
+  // her mesh, split into skin and hair/cloth faces
+  const hair = D.elf.hair, F = D.elf.f, fs = [], fh = [];
+  for (let i = 0; i < F.length; i += 3) (hair[F[i]] + hair[F[i + 1]] + hair[F[i + 2]] >= 2 ? fh : fs).push(F[i], F[i + 1], F[i + 2]);
+  add('Her skin', '#e9c9a8', mesh(D.elf.v, fs, new THREE.MeshStandardMaterial({ color: 0xe9c9a8, roughness: .8, side: THREE.DoubleSide })));
+  add('Her hair and loose cloth', '#7c6fd6', mesh(D.elf.v, fh, new THREE.MeshStandardMaterial({ color: 0x7c6fd6, roughness: .9, side: THREE.DoubleSide, transparent: true, opacity: .55 })));
+  add('Average real head (' + D.average_head.people + ' people)', '#5fd0c0', mesh(D.average_head.v, D.average_head.f, new THREE.MeshStandardMaterial({ color: 0x5fd0c0, roughness: .9, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide })));
+  const ball = (p, r, c) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14), new THREE.MeshStandardMaterial({ color: c, roughness: .4 })); m.position.set(...p); return m };
+  const NAMES = { auditory_canal_left: 'left ear canal', auditory_canal_right: 'right ear canal', eye_left: 'left eye', eye_right: 'right eye', mandible: 'jaw bone', teeth_upper: 'upper teeth', teeth_lower: 'lower teeth' };
+  const gReal = new THREE.Group();
+  for (const [k, o] of Object.entries(D.landmarks)) { const e = ball(o.mean, 1, 0x38d39f); e.scale.set(Math.max(2, o.std[0]), Math.max(2, o.std[1]), Math.max(2, o.std[2])); e.material.transparent = true; e.material.opacity = .45; gReal.add(e); gReal.add(ball(o.mean, 2.2, 0x38d39f)) }
+  add('Real landmark positions (dot = mean, blob = spread)', '#38d39f', gReal);
+  const gKp = new THREE.Group(); for (const p of Object.values(D.keypoints)) gKp.add(ball(p, 3, 0xff5a5a)); add('Her detected keypoints (nose, eyes, ears)', '#ff5a5a', gKp);
+  if (D.generated) { const gG = new THREE.Group(); const cols = { eye_left: 0xffe14d, eye_right: 0xffe14d, mandible: 0xffa33c, teeth_upper: 0xffffff };
+    for (const [k, o] of Object.entries(D.generated)) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(o.points), 3)); gG.add(new THREE.Points(g, new THREE.PointsMaterial({ color: cols[k], size: 2.2 }))) }
+    add('What the model generated: eyes (yellow), jaw (orange), upper teeth (white)', '#ffe14d', gG, false) }
+  const gAx = new THREE.Group(); const line = (a, b, c) => { const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]); return new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })) };
+  gAx.add(line([0, 0, 0], [130, 0, 0], 0xff4444), line([0, 0, 0], [0, 130, 0], 0x44dd44), line([0, 0, 0], [0, 0, 130], 0x5599ff), ball([0, 0, 0], 3, 0xffffff));
+  add('Frame: origin (white), x to her right (red), y forward (green), z up (blue)', '#ffffff', gAx);
+  const [lo, hi] = D.window, box = new THREE.Box3(new THREE.Vector3(...lo), new THREE.Vector3(...hi)); add('Window the model reads', '#666c78', new THREE.Box3Helper(box, 0x666c78), false);
+  $('#layers').innerHTML = layers.map((l, i) => `<label><input type="checkbox" data-i="${i}" ${l.on ? 'checked' : ''}><span class="dot" style="background:${l.colour}"></span>${l.name}</label>`).join('');
+  $('#layers').addEventListener('change', e => { layers[+e.target.dataset.i].obj.visible = e.target.checked });
+  // table: her keypoints against the real landmark means
+  const kp = D.keypoints, row = (n, her, real) => `<tr><td>${n}</td><td>${her ? her.map(x => Math.round(x)).join(', ') : '–'}</td><td>${real ? real.mean.map(x => Math.round(x)).join(', ') + ' ± ' + real.std.map(x => Math.round(x)).join(', ') : '–'}</td></tr>`;
+  let h = '<tr><th></th><th>Hers (x, y, z)</th><th>Real (x, y, z)</th></tr>' + row('Left ear', kp['left ear'], D.landmarks.auditory_canal_left) + row('Right ear', kp['right ear'], D.landmarks.auditory_canal_right) + row('Left eye', kp['left eye'], D.landmarks.eye_left) + row('Right eye', kp['right eye'], D.landmarks.eye_right) + row('Nose tip', kp.nose, null);
+  for (const k of ['mandible', 'teeth_upper', 'teeth_lower']) h += row('Real ' + NAMES[k], D.generated && D.generated[k] ? D.generated[k].centre : null, D.landmarks[k]).replace('<td>Real ', '<td>Generated / real ');
+  $('#tab').innerHTML = h;
+  const view = v => { const d = 620, t = new THREE.Vector3(0, 20, 0); const p = { front: [0, 20, d], side: [-d, 20, 0], top: [0, d, 0.01], back: [0, 20, -d] }[v]; camera.position.set(...p); controls.target.copy(t); controls.update() };
+  document.querySelectorAll('button[data-v]').forEach(b => b.onclick = () => view(b.dataset.v)); view('front');
+  const fit = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix() }; addEventListener('resize', fit); fit();
+  (function loop() { controls.update(); dl.position.copy(camera.position); renderer.render(scene, camera); requestAnimationFrame(loop) })();
+}).catch(e => { document.body.insertAdjacentHTML('beforeend', '<p style="position:fixed;bottom:10px;left:10px">Could not load the data: ' + e + '</p>') });
+</script></body></html>

@@ -1,6 +1,6 @@
 """Generate an interior with the flow-matching model (flow_f1.py) for one shell-only label volume in a part frame.
 The volume only needs body (any label 1..254), outside (0) and unknown (255); any anatomy in it is ignored.
-The transformer runs on the CPU (a laptop GPU cannot hold the attention of 12,000 tokens), the decoder on the GPU.
+Runs on the GPU (PyTorch's memory-efficient attention holds 12,000 tokens in well under 4 GB); env DEVICE=cpu moves the transformer to the CPU.
 Output npz: draws (n, X, Y, Z) uint8 labels, majority, codes (n, tokens, C) as the decoder reads them, idx (tokens, 3).
 args: <interior_data root> <checkpoint flow_f1.pt> <labels npz> <face|pelvis> <out npz> [age] [sex m|f] [draws=3] [steps=4]"""
 import os, sys, json, math, numpy as np, torch
@@ -21,7 +21,7 @@ def load(root, ckf, part):
     from face_compress import make_ae
     from transformer_smoke import DEV
     from flow_f1 import Flow
-    ck = torch.load(ckf, map_location='cpu'); net = Flow(ck['fdim'], ck['C'], ck['ncmax'], ck['d'], ck['layers']); net.load_state_dict(ck['state_dict']); net.eval()
+    ck = torch.load(ckf, map_location='cpu'); net = Flow(ck['fdim'], ck['C'], ck['ncmax'], ck['d'], ck['layers']); net.load_state_dict(ck['state_dict']); net.eval().to(os.environ.get('DEVICE', DEV))
     fidx = json.load(open(os.path.join(root, 'face_v1_headframe', 'index.json'))); pidx = json.load(open(os.path.join(root, 'pelvis_v1', 'index.json')))
     NC = max(fidx['ids'].values()) + 1 if part == 'face' else len(pidx['classes']); names = {v: k for k, v in fidx['ids'].items()} if part == 'face' else dict(enumerate(pidx['classes']))
     c = torch.load(os.path.join(root, part + '_compress', 'autoencoder_t%d.pt' % (8 if part == 'face' else 12)), map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
@@ -29,12 +29,12 @@ def load(root, ckf, part):
 
 @torch.no_grad()
 def sample(net, ck, part, idx, feat, pos, shell, NC, age, sex, steps, seed):
-    pid = {'pelvis': 0, 'face': 1}[part]; T = lambda a, dt=torch.float32: torch.tensor(np.asarray(a), dtype=dt); N = len(idx); cls = np.zeros((1, ck['ncmax']), np.float32); cls[0, :NC] = 1
+    dev = next(net.parameters()).device; pid = {'pelvis': 0, 'face': 1}[part]; T = lambda a, dt=torch.float32: torch.tensor(np.asarray(a), dtype=dt, device=dev); N = len(idx); cls = np.zeros((1, ck['ncmax']), np.float32); cls[0, :NC] = 1
     cd = dict(pos=T(pos)[None], part=T(np.full(N, pid), torch.long)[None], sfeat=T(feat[shell])[None], spos=T(pos[shell])[None], spart=T(np.full(int(shell.sum()), pid), torch.long)[None],
               age=T([[(age or 0) / 100.0]]), agek=T([[float(age is not None)]]), sex=T([{'m': 1, 'f': 2}.get(sex, 0)], torch.long), cls=T(cls), cpart=T([pid], torch.long))
-    g = torch.Generator(); g.manual_seed(seed); z = torch.randn((1, N, ck['C']), generator=g); rev = torch.zeros((1, N), dtype=torch.bool)
-    for i in range(steps): z = z + net(z, torch.tensor(i / steps), rev, **cd) / steps
-    mu, sd = [np.asarray(x, np.float32) for x in ck['norm'][part]]; return z[0].numpy() * sd + mu
+    g = torch.Generator(); g.manual_seed(seed); z = torch.randn((1, N, ck['C']), generator=g).to(dev); rev = torch.zeros((1, N), dtype=torch.bool, device=dev)
+    for i in range(steps): z = z + net(z, torch.tensor(i / steps, device=dev), rev, **cd) / steps
+    mu, sd = [np.asarray(x, np.float32) for x in ck['norm'][part]]; return z[0].cpu().numpy() * sd + mu
 
 @torch.no_grad()
 def to_labels(ae, F, G, idx, codes, base):
