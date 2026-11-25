@@ -182,3 +182,47 @@ A reviewer read sections 1–9. Both papers it put forward exist and are the clo
 2. **Face labels at the source.** A HaN-Seg head has "other lean tissue" where its brain is, and the frozen autoencoder has already turned that into the target code. Telling the generator the convention (section 4.5) does not teach it what a fully labelled head is. Two repairs, both before any face flow run: fill the missing classes in the data (the brain, trachea and neck vertebrae of the HaN-Seg CTs with the licensed TotalSegmentator tasks; the reverse direction needs a model trained on HaN-Seg's classes), and retrain the face autoencoder with a marginal loss so an ambiguous voxel accepts any class compatible with its source (Shi et al., marginal and exclusion loss for partially labelled data). The pelvis has one convention and is unaffected, which is one more reason to run the flow comparison on the pelvis first.
 
 The reviewer's earlier warning on v7, that class-weighted cross-entropy moves boundaries and inflates rare classes, matches what version 1 then did (structures at about 1.6 times their volume).
+
+## 11. Results and decisions, 2026-11-24 (evening)
+
+### 11.1 A fault in test-time decoding, found and fixed
+
+Tokens with no body in them were decoded as zeros. The frozen decoder reads neighbouring tokens, and zeros are not a code it knows, so it painted right parotid, right eye and brainstem over plain tissue next to the body's edge. On one test head the true codes decoded this way gave the right parotid at 10.5 times its volume. Those tokens now carry the autoencoder's codes of the shell-only volume (outside, unknown, one generic tissue inside), which is available at inference. Training was not affected. This was the cause of the apparent left/right gap and of the speckle.
+
+Scores before the fix (sections 2 and 3 of this plan, and the first F0/F1 numbers) are superseded by:
+
+| Part | Flow F1, one draw | Flow F1, majority of 3 | One-shot version 2 | Nearest person |
+|---|---|---|---|---|
+| Pelvis | 0.583 | 0.636 | 0.528 | 0.544 |
+| Face | 0.339 | 0.393 | 0.365 | 0.310 |
+
+Median Dice over classes, 55 test people, both models at 20,000 steps and 14.6 M parameters, pelvis and face trained together. For one flow draw on the pelvis, 99% of structures have a volume, 96% a piece count and 96% a centre inside the range of training people; on the face 80%, 77% and 81%. The majority over draws scores higher on Dice but breaks structures into pieces (67% and 53%), so the single draw is the output for rigging. A model six times larger (86.5 M) gained one Dice point in the smoke run.
+
+### 11.2 First generated character (the elf)
+
+- **Pelvis:** plausible from the full mesh (overlap 0.74 with a real person): hip bones, sacrum, femoral heads, lumbar spine, gluteal muscles, iliopsoas, fat layer, on both sides.
+- **Head, first try: failed** (eyes 0.2 and 1.0 ml, jaw 18 ml). Two causes, both in how the input was prepared, not in the model:
+  1. **Size.** The head was sized with her hair included, so her hair was sized like a skull and her face came out 19% too small.
+  2. **Frame.** Ear and eye keypoints put the midline 9 mm off; her eye keypoints are themselves uneven.
+- **Head, corrected** (size from bare skin only, midline from the mesh's symmetry plane): eyes 4–8 ml at ±35 mm, jaw 43–54 ml, teeth and an 635–867 ml brain, all at the places real heads have them. Still wrong: skull 1,025–1,118 ml and brain too small, because her hair counts as head; no eye lenses.
+- **Hair:** on three real heads a 10 or 25 mm hair-like cover inflates the skull (about 800 to 1,200 ml) and leaves eyes and jaw intact. Hair is a skull problem, not a face problem.
+- Head and pelvis asked for nearly the same size (1,791 and 1,844 mm per mesh unit), so one size for the whole figure is workable for this character.
+
+### 11.3 Decisions (user)
+
+- **Every training run includes the face.** Pelvis-only runs are plumbing checks.
+- **A retrieved nearest person (F1b) is a last backup.** First: flow at full training, then more data.
+- **No regenerated bald or re-dressed versions of a character** to get the surface under hair or cloth: they shift the face. Wanted: a learned guess of the body under hair and cloth from the covered shell. External tools read and parked as heavier than the need: VoxHammer on TRELLIS (region-preserving 3D editing, 40 GB card) and ETCH (body under clothing as a SMPL fit; weights non-commercial).
+- **Production is end to end:** the full body shell goes in, the filled body comes out.
+
+### 11.4 Added tests
+
+| # | Test | Passes if | Cost |
+|---|---|---|---|
+| P1 | Sensitivity of the head model to size (±10, 20%), shift (5, 10 mm) and turn (5, 10°) on real test heads | gives the precision the input normalisation must reach and the jitter training needs | laptop, running |
+| P2 | Input normalisation from the shell alone: upright, midline from the symmetry plane, one size from bare skin; no ear or eye keypoints | same frame on CT people as the anatomy-based one, within P1's tolerance | CPU |
+| P3 | Train on shell-derived frames with size, shift and turn jitter | scores hold under the errors P1 measured | one run as F1 |
+| P4 | Covers: real people with synthetic hair- and cloth-like covers on the shell, flagged per token; target under the cover is "outside" | covered real heads keep their true skull; the elf's skull falls to a real size | preparation on CPU plus one run as F1 |
+| F7 | Continuous decoder: the autoencoder's decoder answers "which structure is at this point" for any point; meshes are extracted from the boundaries between regions (one answer per point, so no overlaps or gaps). The generator and tokens are unchanged | smoother surfaces and thin structures (eye lens, muscle sheets) survive; kept if the rig needs it | autoencoder retraining only |
+
+Direct triangle generation (face-by-face mesh models) is not planned: it gives no guarantee that many nested structures are closed and do not intersect. A fixed template mesh bent to each person is kept in mind for bones only, where a consistent vertex layout helps the rig.
