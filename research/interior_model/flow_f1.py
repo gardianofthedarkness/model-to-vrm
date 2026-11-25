@@ -79,7 +79,7 @@ def stats(L, NC, mm):
 
 if __name__ == '__main__':
     root = sys.argv[1]; steps = int(sys.argv[2]); TF = int(sys.argv[3]) if len(sys.argv) > 3 else 8; lim = int(sys.argv[4]) if len(sys.argv) > 4 else 0
-    OUT = os.environ.get('OUT', 'flow_f1'); out = os.path.join(root, OUT); os.makedirs(out, exist_ok=True); cache = os.path.join(root, 'prep_v2_TF%d' % TF)
+    OUT = os.environ.get('OUT', 'flow_f1'); out = os.path.join(root, OUT); os.makedirs(out, exist_ok=True); cache = os.path.join(root, os.environ.get('PREP', 'prep_v2_TF%d' % TF))
     res = dict(test='F1', parts=PARTS, d=D, layers=LAYERS, draws=DRAWS, amp=str(AMP), gpu=torch.cuda.get_device_name(0))
     fidx = json.load(open(os.path.join(root, 'face_v1_headframe', 'index.json'))); pidx = json.load(open(os.path.join(root, 'pelvis_v1', 'index.json')))
     names = {'face': {v: k for k, v in fidx['ids'].items()}, 'pelvis': dict(enumerate(pidx['classes']))}
@@ -102,7 +102,7 @@ if __name__ == '__main__':
     for f in sorted(os.listdir(cache)):
         key, part = f[:-4].rsplit('_', 1)
         if part not in PARTS: continue
-        base = key.split('~')[0]; z = np.load(os.path.join(cache, f)); e = Ent(); e.name, e.key, e.base, e.F, e.mm = part, key, base, aes[part][1], MM[part]
+        base = key.split('~')[0]; z = np.load(os.path.join(cache, f)); e = Ent(); e.name, e.key, e.base, e.F, e.mm, e.file = part, key, base, aes[part][1], MM[part], os.path.join(cache, f); e.has_L = 'L' in z.files
         e.idx, e.feat, e.pos = z['idx'], z['feat'], z['pos']; code = z['code'].astype(np.float32); e.G = code.shape[1:]; e.raw = code[(slice(None),) + tuple(e.idx.T)].T.copy()
         occ = np.zeros(e.G, bool); occ[tuple(e.idx.T)] = True
         e.shell = ~ndi.minimum_filter(occ, size=3, mode='constant', cval=0)[tuple(e.idx.T)]                  # body tokens with a neighbour cell outside the body
@@ -110,6 +110,7 @@ if __name__ == '__main__':
         e.cls[list(kn) if kn is not None else range(NCS[part])] = 1                                          # (a mirrored head draws the mirrored classes: the list is symmetric in left/right pairs)
         data.setdefault(key, []).append(e)
     sp = {s: sorted(k for k in data if split[k.split('~')[0]] == s) for s in ('train', 'val', 'test')}
+    sp['val'] = [k for k in sp['val'] if '~' not in k]; sp['test'] = [k for k in sp['test'] if '~' not in k or k.endswith('~h')]   # scored: clean people, and covered ones (prep v3)
     if lim: sp = {s: v[:: max(1, len(v) // lim)][:lim] for s, v in sp.items()}
     for s in ('val', 'test'):
         if not sp[s]: sp[s] = sp['train'][:2]; log('NOTE: no', s, 'people in the cache, using training people (plumbing check only)')
@@ -179,7 +180,11 @@ if __name__ == '__main__':
     ema.load_state_dict(torch.load(bestf, map_location=DEV)['state_dict'])
 
     # ---- sampling and decoding
-    labels = lambda e: (lambda L: np.ascontiguousarray(L[:e.G[0] * e.F, :e.G[1] * e.F, :e.G[2] * e.F]))(np.load(os.path.join(root, FOLD[e.name], e.base + '.npz'))['labels'])
+    def labels(e):                                                                           # true labels: stored with the copy (prep v3, shell frame) or the original set
+        L = np.load(e.file)['L'] if e.has_L else np.load(os.path.join(root, FOLD[e.name], e.base + '.npz'))['labels']; return np.ascontiguousarray(L[:e.G[0] * e.F, :e.G[1] * e.F, :e.G[2] * e.F])
+    def cover(e):
+        if not e.has_L: return None
+        z = np.load(e.file); n = int(np.prod([g * e.F for g in e.G])); return np.unpackbits(z['cover'])[:n].reshape([g * e.F for g in e.G]).astype(bool)
     @torch.no_grad()
     def sample(key, n, seed):
         cd = cond(key, False); g = torch.Generator(device=DEV); g.manual_seed(seed); N = cd['pos'].shape[1]
@@ -192,7 +197,8 @@ if __name__ == '__main__':
         generic tissue inside the body). The decoder reads its neighbours; zeros there are not a code it knows and made it paint a few
         classes (right parotid, right eye, brainstem) over plain tissue next to the body's edge. Found 2026-11-24."""
         if (e.key, e.name) not in bases:
-            L = labels(e); bases.clear(); bases[(e.key, e.name)] = encode(aes[e.name][0], np.where((L > 0) & (L < UNK), 3 if e.name == 'face' else 5, L), NCS[e.name], e.F)
+            L = labels(e); cv = cover(e); sh = (L > 0) & (L < UNK) | (cv if cv is not None else False); bases.clear()
+            bases[(e.key, e.name)] = encode(aes[e.name][0], np.where(sh, 3 if e.name == 'face' else 5, np.where(L == UNK, UNK, 0)).astype(np.uint8), NCS[e.name], e.F)
         return bases[(e.key, e.name)]
     @torch.no_grad()
     def to_labels(e, z):
@@ -209,7 +215,8 @@ if __name__ == '__main__':
     med = lambda d: float(np.median(list(d.values()))) if d else 0.0
     truth = {}
     def tr(e):
-        if (e.key, e.name) not in truth: L = labels(e); truth[(e.key, e.name)] = (L, (L > 0) & (L < UNK), np.where(L == UNK, 0, L))
+        if (e.key, e.name) not in truth:                                                     # body = the shell the model read (body plus any cover); truth outside under a cover
+            L = labels(e); cv = cover(e); truth[(e.key, e.name)] = (L, (L > 0) & (L < UNK) | (cv if cv is not None else False), np.where(L == UNK, 0, L))
         return truth[(e.key, e.name)]
     pick = {}
     for n in (4, 8, 16, 32):                                                                                 # number of Euler steps, picked on validation people by Dice of one draw
@@ -246,31 +253,34 @@ if __name__ == '__main__':
             for j in range(len(stack)): c += stack[i] == stack[j]
             up = c > bc; best[up] = stack[i][up]; bc[up] = c[up]
         return best
-    rows = {p: {w: [] for w in ('single', 'majority', 'nearest')} for p in PARTS}; plaus = {p: {w: [] for w in ('single', 'majority', 'nearest', 'truth')} for p in PARTS}
-    shellfid = {p: [] for p in PARTS}; agree = {p: [] for p in PARTS}; t3 = time.time()
+    from collections import defaultdict
+    rows = defaultdict(lambda: {w: [] for w in ('single', 'majority', 'nearest')}); plaus = defaultdict(lambda: {w: [] for w in ('single', 'majority', 'nearest', 'truth')})
+    shellfid = defaultdict(list); agree = defaultdict(list); cleared = defaultdict(list); t3 = time.time()
     for k in sp['test'][:int(os.environ.get('TEST_LIMIT', '0')) or None]:
         draws = [draw(k, NS, 100 + j) for j in range(DRAWS)]
         for pi, e in enumerate(data[k]):
-            L, body, Lt = tr(e); raw = [d[pi] for d in draws]; nm = names[e.name]
+            L, body, Lt = tr(e); raw = [d[pi] for d in draws]; nm = names[e.name]; pn = e.name + ('_covered' if e.key.endswith('~h') else '')
             cell = np.zeros(e.G, bool); cell[tuple(e.idx.T)] = True; cell = cell.repeat(e.F, 0).repeat(e.F, 1).repeat(e.F, 2)   # voxels of the body tokens: the only place the model generates
-            shellfid[e.name].append(float(np.mean([((P > 0) & body & cell).sum() / max(1, (((P > 0) | body) & cell).sum()) for P in raw])))
+            shellfid[pn].append(float(np.mean([((P > 0) & body & cell).sum() / max(1, (((P > 0) | body) & cell).sum()) for P in raw])))
             for P in raw: P[~body] = 0
+            cv = cover(e)
+            if cv is not None and cv.any(): cleared[pn].append(float(np.mean([(P[cv] == 0).mean() for P in raw])))   # share of the cover the model emptied
             M = vote(raw); q = nearest(e); Lq = labels(q); s_ = tuple(slice(0, min(x, y)) for x, y in zip(Lq.shape, L.shape))
             N = np.zeros_like(M); N[s_] = np.where(Lq[s_] == UNK, 0, Lq[s_]); N[~body] = 0; N[body & (N == 0)] = 3 if e.name == 'face' else 5
             tabs = [dice_table(P, Lt, nm) for P in raw]; keys = sorted({x for t_ in tabs for x in t_})
-            rows[e.name]['single'].append({x: float(np.mean([t_.get(x, 0.0) for t_ in tabs])) for x in keys}); rows[e.name]['majority'].append(dice_table(M, Lt, nm)); rows[e.name]['nearest'].append(dice_table(N, Lt, nm))
-            for w, X in (('single', raw[0]), ('majority', M), ('nearest', N), ('truth', Lt)): plaus[e.name][w].append(inside(X, Lt, e))
-            agree[e.name].append(float(np.mean([med(dice_table(raw[i], raw[j], nm)) for i in range(DRAWS) for j in range(i + 1, DRAWS)])) if DRAWS > 1 else 1.0)
+            rows[pn]['single'].append({x: float(np.mean([t_.get(x, 0.0) for t_ in tabs])) for x in keys}); rows[pn]['majority'].append(dice_table(M, Lt, nm)); rows[pn]['nearest'].append(dice_table(N, Lt, nm))
+            for w, X in (('single', raw[0]), ('majority', M), ('nearest', N), ('truth', Lt)): plaus[pn][w].append(inside(X, Lt, e))
+            agree[pn].append(float(np.mean([med(dice_table(raw[i], raw[j], nm)) for i in range(DRAWS) for j in range(i + 1, DRAWS)])) if DRAWS > 1 else 1.0)
             np.savez_compressed(os.path.join(out, 'pred_%s_%s.npz' % (e.name, k)), labels=M, draw0=raw[0])
         truth.clear()
     summ = {}
-    for p in PARTS:
+    for p in list(rows):
         if not rows[p]['single']: continue
         s = summ[p] = {}
         for w, rr in rows[p].items():
             keys = sorted({x for r in rr for x in r}); s[w] = {x: round(float(np.median([r[x] for r in rr if x in r])), 3) for x in keys}; s[w + '_median_over_classes'] = round(med(s[w]), 3)
         s['inside_training_range'] = {w: dict(zip(('volume', 'pieces', 'centre'), [round(float(x), 3) for x in np.mean(v, 0)])) for w, v in plaus[p].items()}
-        s['shell_fidelity_iou'] = round(float(np.mean(shellfid[p])), 4); s['agreement_between_draws'] = round(float(np.mean(agree[p])), 3)
+        s['shell_fidelity_iou'] = round(float(np.mean(shellfid[p])), 4); s['cover_emptied'] = round(float(np.mean(cleared[p])), 3) if cleared[p] else None; s['agreement_between_draws'] = round(float(np.mean(agree[p])), 3)
     res['test_results'] = summ; res['test_seconds_per_person'] = round((time.time() - t3) / max(1, len(sp['test'])), 1)
     res['decode'] = 'shell-volume codes in tokens without body'; json.dump(res, open(os.path.join(out, 'flow_f1_shellfill.json'), 'w'), indent=1)
     log('SUMMARY', json.dumps({k: v for k, v in res.items() if k not in ('test_results', 'curve', 'code_mean', 'code_std')}),
