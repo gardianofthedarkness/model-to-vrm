@@ -8,6 +8,7 @@ teeth, skull, head, maxillary and frontal sinuses).
 SOURCE=ts      TotalSegmentator CT adults with a whole skull; each scan is cropped to the skull label's box with a
                margin of a fifth of the skull's own size, so the models run on the head only; output on that crop,
                with its offset in the codes_v1 crop.
+TASKS, ROI    other tasks, e.g. TASKS=total ROI=brain,trachea,... (Apache-2.0 'total' weights) to add structures one source lacks.
 SOURCE=hanseg  HaN-Seg's 42 head-and-neck CTs (CC BY-ND 4.0, private), cropped to the body (largest piece above -500 HU)
                with its offset in the scan recorded.
 Output per scan and task: uint8 label map (the task's own class numbers) plus class names, voxel counts, timing.
@@ -16,7 +17,8 @@ One upload per job. args: <repo> <shard i/n> [limit]"""
 import os, sys, csv, json, gzip, time, zipfile, numpy as np
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
-TASKS = ['head_glands_cavities', 'head_muscles', 'craniofacial_structures']
+TASKS = os.environ.get('TASKS', 'head_glands_cavities,head_muscles,craniofacial_structures').split(',')   # TASKS=total ROI=brain,... : the general model on a subset (face label repair)
+ROI = [r for r in os.environ.get('ROI', '').split(',') if r] or None
 if __name__ == '__main__':
     import nibabel as nib, SimpleITK as sitk
     from huggingface_hub import HfApi, hf_hub_download, snapshot_download
@@ -60,7 +62,7 @@ if __name__ == '__main__':
                 rec['shape'] = list(nib.load(p).shape[:3])
             arrays = {}
             for t in TASKS:
-                t2 = time.time(); seg = totalsegmentator(p, None, task=t, ml=True, quiet=True, device='gpu'); L = np.asarray(seg.dataobj).astype(np.uint8); cm = class_map[t]
+                t2 = time.time(); seg = totalsegmentator(p, None, task=t, ml=True, quiet=True, device='gpu', **(dict(roi_subset=ROI) if ROI and t == 'total' else {})); L = np.asarray(seg.dataobj).astype(np.uint8); cm = class_map[t]
                 cnt = np.bincount(L.ravel(), minlength=max(cm) + 1); arrays[t] = L
                 rec['tasks'][t] = dict(seconds=round(time.time() - t2, 1), voxels={cm[i]: int(cnt[i]) for i in cm if i < len(cnt) and cnt[i] > 0})
             np.savez_compressed(os.path.join(out_dir, '%s.npz' % c), **arrays); os.remove(p); rec['seconds'] = round(time.time() - t1, 1)
