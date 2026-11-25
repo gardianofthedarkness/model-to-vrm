@@ -33,8 +33,15 @@ class MeanShell:
             k = np.isfinite(d); tot = np.where(k, d, 0).astype(np.float64) if tot is None else tot + np.where(k, d, 0); cnt = k.astype(np.int32) if cnt is None else cnt + k; npeople += 1
         s.n = cnt; s.phi = np.where(cnt > 0, tot / np.maximum(cnt, 1), np.nan).astype(np.float32)
         s.phi[cnt < max(2, npeople // 2)] = np.nan; s.mm, s.lo, s.G = mm * G, np.asarray(lo, float), G   # kept where at least half of the people have data
+        s.fill()
+    def fill(s):                                                                               # where fewer than half the people have data, take the nearest defined value:
+        bad = ~np.isfinite(s.phi)                                                              # a point leaving the defined region must not score as a perfect fit
+        if bad.any(): j = ndi.distance_transform_edt(bad, return_distances=False, return_indices=True); s.phi = s.phi[tuple(j)]
+    @classmethod
+    def load(cls, f):
+        z = np.load(f); m = cls.__new__(cls); m.phi, m.n, m.lo, m.mm = z['phi'], z['n'], z['lo'], float(z['mm']); m.fill(); return m
     def __call__(s, p):
-        q = (p - s.lo) / s.mm - 0.5; return ndi.map_coordinates(s.phi, q.T, order=1, mode='constant', cval=np.nan)
+        q = (p - s.lo) / s.mm - 0.5; return ndi.map_coordinates(s.phi, q.T, order=1, mode='nearest')
 
 def fit(points, mean, x0=None, scale=True):
     """similarity (s, Q, b) with mean(s Q x + b) ~ 0 on the skin points. x0 = [log s, rotvec(3), b(3)]."""
@@ -62,8 +69,10 @@ if __name__ == '__main__':
         split = {c: v['split'] for c, v in members.items()}; cl = pi['classes']; LM = {k: cl.index(k) for k in ('femur_l', 'femur_r', 'sacrum', 'lumbar')}
     load = lambda c: np.load(os.path.join(root, folder, c + '.npz'))['labels']
     train = sorted(c for c in members if split.get(c) == 'train'); held = sorted(c for c in members if split.get(c) in ('val', 'test'))[:nheld]
-    mean = MeanShell((signed_distance(load(c), mm)[::G, ::G, ::G] for c in train), mm, lo, G); print(part, 'mean shell from', len(train), 'people in %.0f s' % (time.time() - t0), flush=True)
-    np.savez_compressed(outf.replace('.json', '_mean.npz'), phi=mean.phi, n=mean.n, lo=lo, mm=mm * G)
+    mf = outf.replace('.json', '_mean.npz')
+    if os.path.exists(mf): mean = MeanShell.load(mf); print('mean shell loaded', flush=True)
+    else: mean = MeanShell((signed_distance(load(c), mm)[::G, ::G, ::G] for c in train), mm, lo, G); print(part, 'mean shell from', len(train), 'people in %.0f s' % (time.time() - t0), flush=True)
+    if not os.path.exists(mf): np.savez_compressed(mf, phi=mean.phi, n=mean.n, lo=lo, mm=mm * G)
     rng = np.random.default_rng(0); CASES = [('none', 1.0, 0, 0)] + [('size x%.2f' % k, k, 0, 0) for k in (0.8, 1.25)] + [('shift %d mm' % d, 1.0, d, 0) for d in (10, 20)] + \
             [('turn %d deg' % a, 1.0, 0, a) for a in (5, 10)] + [('all three', 1.15, 15, 8)]
     rows = {n: [] for n, *_ in CASES}; self_fit = []
@@ -84,3 +93,13 @@ if __name__ == '__main__':
     sf = {k: dict(median=round(float(np.median([r[k] for r in self_fit])), 3), p90=round(float(np.percentile([r[k] for r in self_fit], 90)), 3)) for k in self_fit[0]}
     json.dump(dict(part=part, held_out=len(held), recovery=summ, fit_of_unmoved_shell_to_mean=sf, seconds=round(time.time() - t0)), open(outf, 'w'), indent=1)
     print('SUMMARY', json.dumps(summ), json.dumps(sf))
+    if os.environ.get('PICS'):                                                                # pictures: recovery error per case (aggregate) and the mean shell (an average over people)
+        import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(1, 2, figsize=(15, 5.2), gridspec_kw=dict(width_ratios=[1.5, 1]))
+        names_ = list(rows); x_ = np.arange(len(names_))
+        for j, r in enumerate(rows[n] for n in names_): ax[0].scatter(np.full(len(r), j) + np.random.default_rng(j).uniform(-.15, .15, len(r)), [q['landmark_error_mm'] for q in r], s=18, color='#4a6fd1')
+        ax[0].plot(x_, [summ[n]['median_mm'] for n in names_], 'k_', ms=26, mew=2); ax[0].set_xticks(x_); ax[0].set_xticklabels([n.replace(' ', '\n', 1) for n in names_], fontsize=9)
+        ax[0].set_ylabel('landmark error after the fit (mm)'); ax[0].set_title('%s: shell moved by a known amount, then fitted back (%d held-out people; bar = median)' % (part, len(held)), fontsize=10); ax[0].spines[['top', 'right']].set_visible(False)
+        ph = mean.phi; k = ph.shape[0] // 2; ax[1].imshow(np.clip(ph[k].T, -40, 40), origin='lower', cmap='RdBu'); ax[1].contour(ph[k].T, [0], colors='k', linewidths=1.2)
+        ax[1].set_title('mean shell, midline slice (signed distance, black = average skin)', fontsize=10); ax[1].axis('off')
+        plt.tight_layout(); plt.savefig(os.path.join(os.environ['PICS'], 'align_%s.png' % part), dpi=95); print('picture saved')
