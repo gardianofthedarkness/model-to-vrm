@@ -111,3 +111,35 @@ Notebook: `notebooks/flesh_runtime.ipynb` (ARDY clip → muscle effort → runti
   does not respect ballistic flight); measured and shown, not hidden.
 
 ![R2 vs EMG](../img/r2_activation_emg.png)
+
+### R2 validated on measured running (2026-11-24)
+
+`research/rig_stage/r2_validate.py`, data: Van Hooren & Meijer 2024 (OSF 7qbxc; no licence set on the data, so it stays
+private outside the repo, only these scores are published). Three women closest to 28 (runners 13, 12, 16: 32, 25, 24 y),
+level treadmill running at 3 m/s, 10 s each (12–16 strides). R2 sees only their measured motion (OpenSim IK, same
+coordinate names as myoLegs, model mass scaled to the runner) and foot-contact timing from the plates; it runs the same
+`r2_core.py` as the ARDY pipeline. EMG: band-pass 20–450 Hz, rectified, 6 Hz envelope.
+
+- **Vertical ground reaction:** r = 0.98 / 0.96 / 0.95 against the plates, RMSE 0.21 / 0.29 / 0.27 BW, stride peak
+  2.66 vs 2.50, 2.43 vs 2.20, 2.05 vs 2.13 BW.
+- **Muscle timing (shape r of stride-averaged curves, runners 13 / 12 / 16):**
+
+| muscle | r | verdict |
+|---|---|---|
+| soleus | 0.92 / 0.96 / 0.92 | right |
+| vastus lateralis | 0.96 / 0.98 / 0.96 | right |
+| vastus medialis | 0.93 / 0.97 / 0.95 | right |
+| gluteus medius | 0.94 / 0.92 / 0.96 | right |
+| gastrocnemius medial / lateral | 0.60 / 0.89 / 0.85 ; 0.44 / 0.95 / 0.22 | timing right, peak 10–60 ms late in some |
+| semitendinosus/membranosus | 0.62 / 0.75 / 0.69 | late-swing peak present |
+| biceps femoris | 0.64 / 0.26 / 0.48 | weak |
+| gluteus maximus | 0.35 / 0.55 / 0.56 | misses the late-swing burst |
+| tibialis anterior | 0.06 / 0.05 / −0.25 | wrong: misses the foot-strike burst |
+| rectus femoris | −0.21 / −0.16 / −0.38 | wrong: R2 fires it in swing, runners at foot strike |
+
+- R2's effort tends to trail the EMG by 0–60 ms, the size of the electromechanical delay (EMG leads force).
+- The misses are the known limit of minimum-effort static optimisation: it never co-contracts, so it cannot produce
+  the braking and stabilising bursts around foot strike (tibialis anterior, rectus femoris) or late-swing gluteus
+  maximus. These need either EMG-informed or dynamic optimisation, or a model learned from data like this.
+- Amplitudes against MVC trials are not reliable here (several MVC recordings give EMG far above 100 % MVC), so only
+  shapes are scored.
