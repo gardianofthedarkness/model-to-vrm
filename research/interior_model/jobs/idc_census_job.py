@@ -45,7 +45,8 @@ if __name__ == '__main__':
         pel = sum(all(r.get(n) == 'whole' for n in ('hip_left', 'hip_right', 'sacrum')) for r in ok); head = sum(r.get('skull') == 'whole' for r in ok)
         out[col] = dict(totals=tot, sampled=len(rows), failed=len(rows) - len(ok), pelvis_whole=pel, skull_whole=head, rows=rows)
         log('SUMMARY', col, json.dumps({k: v for k, v in out[col].items() if k != 'rows'}))
-    os.makedirs('census_idc', exist_ok=True); json.dump(out, open('census_idc/idc_census.json', 'w'), indent=1)
+        os.makedirs('census_idc', exist_ok=True); json.dump(out, open('census_idc/%s.json' % os.environ.get('OUTNAME', 'idc_census'), 'w'), indent=1)   # keep partial results
+    os.makedirs('census_idc', exist_ok=True); json.dump(out, open('census_idc/%s.json' % os.environ.get('OUTNAME', 'idc_census'), 'w'), indent=1)
     for a in range(5):
         try: api.upload_folder(folder_path='census_idc', path_in_repo='census_idc', repo_id=repo, repo_type='dataset', commit_message='IDC census'); break
         except Exception as e: log('upload retry', a, type(e).__name__); time.sleep(120)
