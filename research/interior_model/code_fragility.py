@@ -9,7 +9,7 @@ from transformer_smoke import DEV, encode
 from flow_sample import to_labels
 aef, idxf, tissue, pf = sys.argv[1:5]; levels = [float(x) for x in (sys.argv[5] if len(sys.argv) > 5 else '0,0.1,0.2,0.4').split(',')]
 ids = json.load(open(idxf))['ids']; NC = max(ids.values()) + 1; inv = {v: k for k, v in ids.items()}
-c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
+c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
 z = np.load(pf); idx = z['idx'].astype(np.int64); L = z['L']; G = [n // F for n in L.shape]
 code = z['code'].astype(np.float32); code = code[(slice(None),) + tuple(idx.T)].T if code.ndim == 4 else code
 body = (L > 0) & (L < 255); base = encode(ae, np.where(body, 3, L).astype(np.uint8), NC, F); known = L != 255

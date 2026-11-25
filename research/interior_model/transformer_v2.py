@@ -70,7 +70,7 @@ if __name__ == '__main__':
     NCf = max(fidx['ids'].values()) + 1; NCp = len(pidx['classes'])
     aes = {}
     for part, NC, ck in (('face', NCf, os.path.join(root, 'face_compress', 'autoencoder_t%d.pt' % TF)), ('pelvis', NCp, os.path.join(root, 'pelvis_compress', 'autoencoder_t12.pt'))):
-        c = torch.load(ck, map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
+        c = torch.load(ck, map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
         for p in ae.parameters(): p.requires_grad_(False)
         aes[part] = (ae, c['F'], c['C'], NC)
     C = aes['face'][2]; assert aes['pelvis'][2] == C

@@ -87,7 +87,7 @@ if __name__ == '__main__':
     aes = {}
     for part, ck in (('face', os.path.join(root, os.environ.get('FACE_AE_DIR', 'face_compress'), 'autoencoder_t%d.pt' % TF)), ('pelvis', os.path.join(root, 'pelvis_compress', 'autoencoder_t12.pt'))):
         if part not in PARTS: continue
-        c = torch.load(ck, map_location=DEV); ae = make_ae(NCS[part], c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
+        c = torch.load(ck, map_location=DEV); ae = make_ae(NCS[part], c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
         for p in ae.parameters(): p.requires_grad_(False)
         aes[part] = (ae, c['F'], c['C'])
     C = next(iter(aes.values()))[2]; MM = {'face': 1.0, 'pelvis': 3.0}; FOLD = {'face': 'face_v1_headframe', 'pelvis': 'pelvis_v1'}

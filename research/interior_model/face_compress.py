@@ -13,14 +13,22 @@ head for each token size. Runs on the local GTX 1650 (fp16). args: <data dir> <s
 env: MARGINAL=1 marginal loss for classes a head's source never draws (face label repair, 2026-11-25); OUTDIR output folder."""
 import os, sys, json, time, numpy as np
 import torch, torch.nn as nn
+import torch.nn.functional as F_
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 UNK = 255
 _cc, _nm = torch.cuda.get_device_capability(), torch.cuda.get_device_name()
 AMP = torch.bfloat16 if _cc[0] >= 8 else torch.float16 if _cc[0] == 7 and 'GTX' not in _nm else None   # GTX 16xx: no tensor cores, fp32 faster
 
-def make_ae(NC, F, C, emb=16, w=32):
-    def blk(a, b, s=1): return nn.Sequential(nn.Conv3d(a, b, 3, stride=s, padding=1), nn.GroupNorm(8, b), nn.SiLU(), nn.Conv3d(b, b, 3, padding=1), nn.GroupNorm(8, b), nn.SiLU())
+class ChanNorm(nn.Module):
+    """normalise each voxel over its channels (layer norm on the channel axis). Unlike GroupNorm it uses no statistics over
+    space, so the output does not depend on the tile size (GroupNorm did: plan v8 section 13)."""
+    def __init__(s, c): super().__init__(); s.g = nn.Parameter(torch.ones(1, c, 1, 1, 1)); s.b = nn.Parameter(torch.zeros(1, c, 1, 1, 1))
+    def forward(s, x): m = x.mean(1, keepdim=True); v = x.var(1, keepdim=True, unbiased=False); return (x - m) / torch.sqrt(v + 1e-5) * s.g + s.b
+
+def make_ae(NC, F, C, emb=16, w=32, norm='group'):
+    nm = (lambda b: nn.GroupNorm(8, b)) if norm == 'group' else ChanNorm
+    def blk(a, b, s=1): return nn.Sequential(nn.Conv3d(a, b, 3, stride=s, padding=1), nm(b), nn.SiLU(), nn.Conv3d(b, b, 3, padding=1), nm(b), nn.SiLU())
     n = int(np.log2(F)); ch = [w * 2 ** i for i in range(n + 1)]
     class AE(nn.Module):
         def __init__(s):
@@ -34,6 +42,15 @@ def make_ae(NC, F, C, emb=16, w=32):
             for u in s.up: h = u(h)
             return s.out(h)
     return AE()
+
+def surface_mm(a, b, mm):
+    """median distance between the surfaces of two masks (boundary voxels, both ways), mm"""
+    from scipy.ndimage import binary_erosion
+    from scipy.spatial import cKDTree
+    sa = np.argwhere(a & ~binary_erosion(a)); sb = np.argwhere(b & ~binary_erosion(b))
+    if len(sa) < 3 or len(sb) < 3: return float('nan')
+    sa = sa[:: max(1, len(sa) // 40000)]; sb = sb[:: max(1, len(sb) // 40000)]
+    return float(np.median(np.concatenate([cKDTree(sb).query(sa, workers=-1)[0], cKDTree(sa).query(sb, workers=-1)[0]])) * mm)
 
 def thickness(mask):
     from scipy.ndimage import distance_transform_edt
@@ -98,11 +115,32 @@ if __name__ == '__main__':
                 o = [int(np.clip(q - S // 2, 0, max(0, d - S))) for q, d in zip(ctr, L.shape)]; c_ = L[o[0]:o[0] + S, o[1]:o[1] + S, o[2]:o[2] + S]
                 out[i, :c_.shape[0], :c_.shape[1], :c_.shape[2]] = np.where(c_ == UNK, NC, c_)
             return torch.tensor(out, device=dev)
-        net = make_ae(NC, F, C).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
+        SHAPE = os.environ.get('SHAPE') == '1'                                                 # shape loss: per-class truncated signed distance (plan v8 section 14)
+        T = 8 // ds; active = [int(k) for k in np.flatnonzero(share > 0)]
+        def dil(x, cube): return F_.max_pool3d(x, 3, 1, 1) if cube else torch.maximum(torch.maximum(F_.max_pool3d(x, (3, 1, 1), 1, (1, 0, 0)), F_.max_pool3d(x, (1, 3, 1), 1, (0, 1, 0))), F_.max_pool3d(x, (1, 1, 3), 1, (0, 0, 1)))
+        def depth(m):                                                                          # erosion steps survived, alternating cube and cross: near-euclidean, up to T
+            cur = m; acc = torch.zeros_like(m)
+            for t in range(T): cur = 1 - dil(1 - cur, t % 2 == 0); acc = acc + cur
+            return acc
+        act = torch.tensor(active, device=dev); inact = torch.tensor([k for k in range(NC) if k not in active], device=dev)
+        def shape_targets(y):
+            """u: depth inside each active class (positive) or distance outside it (negative), over T voxels, in [-1, 1];
+            all active classes at once (channels). wgt: emphasis near surfaces, zero at or near unknown voxels."""
+            m = (y[:, None] == act[None, :, None, None, None]).float(); unk = (y == NC).float()[:, None]
+            sd = torch.where(m > 0, depth(m) + 0.5, -(depth(1 - m) + 0.5)); u = (sd / T).clamp(-1, 1)
+            near = u.abs().amin(1, keepdim=True) * T
+            wgt = (1 + 3 * torch.exp(-near / 1.5)) * (1 - unk) * (1 - dil(unk, True))
+            return u, wgt
+        def shape_loss(lg, y):
+            u, wgt = shape_targets(y)                                                          # classes never present are held at 'outside' together, as one class's share
+            err = ((torch.tanh(lg[:, act]) - u).abs().sum(1, keepdim=True) + (torch.tanh(lg[:, inact]) + 1).mean(1, keepdim=True)) / (len(active) + 1)
+            return (err * wgt).sum() / wgt.sum().clamp(min=1) + 0.1 * ce(lg, y)
+        net = make_ae(NC, F, C, norm='chan' if SHAPE else 'group').to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
         scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); ce = nn.CrossEntropyLoss(weight=wts, ignore_index=NC)
         def lossf(lg, y, who=None):
             """weighted cross-entropy; with MARGINAL, a plain-tissue voxel (classes 1-6) of a head whose source never draws classes M
             is scored by log(p_y + sum over M of p_k) (Shi et al., marginal loss), so the code is free to hold the structure it cannot see."""
+            if SHAPE: return shape_loss(lg, y)
             if not (MARGINAL and who) or not any(MISS[c] for c in who): return ce(lg, y)
             lp = torch.log_softmax(lg, 1); valid = y != NC; yc = y.clamp(max=NC - 1); lt = lp.gather(1, yc[:, None])[:, 0]
             rows = []
@@ -124,7 +162,7 @@ if __name__ == '__main__':
                 log(var, 'step', it, 'train %.4f val %.4f' % (loss.item(), vl), 'peak GB %.2f' % (torch.cuda.max_memory_allocated() / 1e9))
         sec_step = (time.time() - t1) / steps; peak = torch.cuda.max_memory_allocated() / 1e9
         net.load_state_dict(best[1]); net.eval(); os.makedirs(OUT, exist_ok=True)
-        torch.save(dict(state_dict=best[1], F=F, C=C, label_mm=ds, classes=NC), os.path.join(OUT, 'autoencoder_%s.pt' % var))
+        torch.save(dict(state_dict=best[1], F=F, C=C, label_mm=ds, classes=NC, norm='chan' if SHAPE else 'group', shape=SHAPE), os.path.join(OUT, 'autoencoder_%s.pt' % var))
         per = {}
         for c in sp['test'][:int(os.environ.get('TEST_LIMIT', '0')) or None]:
             P = predict(net, V[c], NC, F, dev)
@@ -135,8 +173,8 @@ if __name__ == '__main__':
                 if k == 0: continue
                 a, b = (Pp == k) & ok, (T == k)
                 if b.sum() < 10: continue
-                per.setdefault(int(k), []).append((float(2 * (a & b).sum() / (a.sum() + b.sum())), thickness(b)))
-        rows = {names.get(k, str(k)): dict(dice=round(float(np.median([d for d, _ in v])), 3), thickness_mm=round(float(np.median([t for _, t in v])), 1), heads=len(v)) for k, v in per.items()}
+                per.setdefault(int(k), []).append((float(2 * (a & b).sum() / (a.sum() + b.sum())), thickness(b), surface_mm(a, b, ds * (3 if PART == 'pelvis' else 1))))
+        rows = {names.get(k, str(k)): dict(dice=round(float(np.median([q[0] for q in v])), 3), thickness_mm=round(float(np.median([q[1] for q in v])), 1), surface_mm=round(float(np.median([q[2] for q in v])), 2), heads=len(v)) for k, v in per.items()}
         d = np.array([r['dice'] for r in rows.values()]); th = np.array([r['thickness_mm'] for r in rows.values()])
         bins = {'%g-%g mm' % (a, b): (round(float(np.median(d[(th >= a) & (th < b)])), 3) if ((th >= a) & (th < b)).any() else None, int(((th >= a) & (th < b)).sum())) for a, b in ((0, 3), (3, 6), (6, 12), (12, 1e9))}
         res['variants'][var] = dict(token_mm=F * ds * (3 if PART == 'pelvis' else 1), label_mm=ds * (3 if PART == 'pelvis' else 1), best_step=best[2], seconds_per_step=round(sec_step, 3), peak_gpu_gb=round(peak, 2), batch=bs, crop=S,

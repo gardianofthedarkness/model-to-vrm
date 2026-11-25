@@ -11,7 +11,7 @@ from flow_sample import sample, to_labels
 ckf, aef, idxf, steps = sys.argv[1:5]; files = sys.argv[5:]; steps = int(steps)
 ck = torch.load(ckf, map_location='cpu'); net = Flow(ck['fdim'], ck['C'], ck['ncmax'], ck['d'], ck['layers']); net.load_state_dict(ck['state_dict']); net.eval().to(DEV)
 ids = json.load(open(idxf))['ids']; NC = max(ids.values()) + 1; inv = {v: k for k, v in ids.items()}
-c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
+c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
 WATCH = ['skull', 'sinus_maxillary', 'teeth_upper', 'Cavity_Oral', 'mandible', 'eye_left', 'brain']
 for f in files:
     z = np.load(f); idx = z['idx'].astype(np.int64); feat = z['feat']; pos = z['pos']; L = z['L']; G = [n // F for n in L.shape]

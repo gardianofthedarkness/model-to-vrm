@@ -64,7 +64,7 @@ if __name__ == '__main__':
     PARTS = {}
     for part, folder, members, mm, lo, NC, ck, fill in (('face', 'face_v1_headframe', fi['heads'], 1.0, np.array(fi['window_lo_mm']), max(ids.values()) + 1, os.environ.get('FACE_AE', 'face_compress_v3/autoencoder_t8.pt'), 3),
                                                        ('pelvis', 'pelvis_v1', pi['people'], 3.0, np.array(pi['window_lo_mm']), len(pi['classes']), 'pelvis_compress/autoencoder_t12.pt', 5)):
-        c = torch.load(os.path.join(root, ck), map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
+        c = torch.load(os.path.join(root, ck), map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
         al = json.load(open(os.path.join(alignd, '%s.json' % part)))['recovery']['all three']; cv = np.load(os.path.join(coverd, 'cover_%s.npz' % part))
         PARTS[part] = dict(folder=folder, members=members, mm=mm, lo=lo, NC=NC, ae=ae, F=c['F'], fill=fill, mean=MeanShell.load(os.path.join(alignd, '%s_mean.npz' % part)),
                            jit_mm=float(al['p90_mm']), cover=cv['cover'])

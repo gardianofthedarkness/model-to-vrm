@@ -8,7 +8,7 @@ from face_compress import make_ae
 from transformer_smoke import DEV, UNK
 aef, idxf, pf, El, Dl = sys.argv[1:6]
 ids = json.load(open(idxf))['ids']; NC = max(ids.values()) + 1; inv = {v: k for k, v in ids.items()}
-c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
+c = torch.load(aef, map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval(); F = c['F']
 z = np.load(pf); L = z['L']; G = [n // F for n in L.shape]; L = L[:G[0] * F, :G[1] * F, :G[2] * F]; known = L != UNK; body = (L > 0) & (L < UNK)
 
 @torch.no_grad()

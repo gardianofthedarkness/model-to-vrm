@@ -24,7 +24,7 @@ def load(root, ckf, part):
     ck = torch.load(ckf, map_location='cpu'); net = Flow(ck['fdim'], ck['C'], ck['ncmax'], ck['d'], ck['layers']); net.load_state_dict(ck['state_dict']); net.eval().to(os.environ.get('DEVICE', DEV))
     fidx = json.load(open(os.path.join(root, 'face_v1_headframe', 'index.json'))); pidx = json.load(open(os.path.join(root, 'pelvis_v1', 'index.json')))
     NC = max(fidx['ids'].values()) + 1 if part == 'face' else len(pidx['classes']); names = {v: k for k, v in fidx['ids'].items()} if part == 'face' else dict(enumerate(pidx['classes']))
-    c = torch.load(os.path.join(root, part + '_compress', 'autoencoder_t%d.pt' % (8 if part == 'face' else 12)), map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
+    c = torch.load(os.path.join(root, part + '_compress', 'autoencoder_t%d.pt' % (8 if part == 'face' else 12)), map_location=DEV); ae = make_ae(NC, c['F'], c['C'], norm=c.get('norm', 'group')).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
     return net, ck, ae, c['F'], NC, names
 
 @torch.no_grad()
