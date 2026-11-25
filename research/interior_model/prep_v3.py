@@ -71,6 +71,12 @@ if __name__ == '__main__':
         log(part, 'jitter scale (mm, from the shell-fit recovery error)', PARTS[part]['jit_mm'], 'cover voxels', int(cv['cover'].sum()))
     only = [x for x in os.environ.get('PARTS', '').split(',') if x]                          # PARTS=face: prepare one part only
     work = [(part, c_) for part, P in PARTS.items() for c_ in sorted(P['members']) if (not only or part in only) and os.path.exists(os.path.join(root, P['folder'], c_ + '.npz'))]
+    # Test 2 (plan v8 section 14): half the face training people as 'partial' (CQ500-like: only the top CUT_MM of the head is
+    # in view; the rest unknown). PARTIAL=drop leaves them out; PARTIAL=cut keeps them cut. CUT_MM comes from the CQ500 census.
+    PARTIAL = os.environ.get('PARTIAL'); CUT_MM = float(os.environ.get('CUT_MM', '148'))
+    ftrain = sorted(c_ for p_, c_ in work if p_ == 'face' and split.get(c_) == 'train'); half = set(ftrain[1::2]) if PARTIAL else set()
+    if PARTIAL == 'drop': work = [(p_, c_) for p_, c_ in work if not (p_ == 'face' and c_ in half)]
+    log('partial', PARTIAL, 'people', len(half), 'cut mm', CUT_MM)
     work = work[SH[0]::SH[1]]; log('shard', SH, len(work), 'part-people'); meta = {}
     for part, c_ in work:
         P = PARTS[part]; mm, lo, F = P['mm'], P['lo'], P['F']; t1 = time.time()
@@ -78,6 +84,8 @@ if __name__ == '__main__':
             L0 = np.load(os.path.join(root, P['folder'], c_ + '.npz'))['labels']
             pts = skin_points(L0, mm, lo, step=4 if part == 'face' else 1); x, ap = fit(pts, P['mean'], scale=False)
             Q = Rotation.from_rotvec(x[1:4]).as_matrix(); b = x[4:7]; L = reframe(L0, mm, lo, Q, b)
+            if part == 'face' and c_ in half and PARTIAL == 'cut':                               # keep only the top CUT_MM of the head
+                bz = np.flatnonzero(((L > 0) & (L < UNK)).any((0, 1))); ztop = bz.max(); L = L.copy(); L[:, :, :max(0, int(ztop - CUT_MM / mm))] = UNK
             copies = {c_: (L, np.zeros(L.shape, bool))}
             # jitter: rigid move with a spread equal to the measured fit error (shift) and that error over the part's radius (turn)
             body = (L > 0) & (L < UNK); rad = float(np.sqrt(((np.argwhere(body[::4, ::4, ::4]) * 4 * mm + lo - (np.argwhere(body[::4, ::4, ::4]) * 4 * mm + lo).mean(0)) ** 2).sum(1).mean()))

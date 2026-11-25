@@ -6,7 +6,7 @@ frozen autoencoders, the cached preparation and any earlier checkpoint of the sa
 runs the trainer with live log, and uploads the output folder (weights, predictions, JSON, log) at the end.
 env: COMMIT, STAGE (run name), TF, TF_STEPS, LIMIT, TEST_LIMIT, CFG (passed to the trainer). args: <repo>"""
 import os, sys, time, subprocess, urllib.request, shutil
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, snapshot_download, hf_hub_download
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 api = HfApi(); repo = sys.argv[1]; HS = 'gardianofthedarkness/hanseg-ct-mr'; ROOT = '/data/interior'; os.makedirs(ROOT, exist_ok=True)
@@ -21,6 +21,11 @@ snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, all
                   'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/%s/last.pt' % OUT, 'm16_full/%s/flow_f1.pt' % OUT, 'm16_full/align/prep_v3_exclude.json'] + ['m16_full/%s/*_%s.npz' % (PREP, p) for p in parts])
 for d in (FAE, 'pelvis_compress', PREP, OUT):
     if os.path.isdir(os.path.join(ROOT, 'm16_full', d)): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
+if os.environ.get('PREP_PELVIS'):                                                               # Test 2.5: pelvis people from another preparation
+    PP = os.environ['PREP_PELVIS']; snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['m16_full/%s/*_pelvis.npz' % PP])
+    for f in os.listdir(os.path.join(ROOT, 'm16_full', PP)): shutil.copy(os.path.join(ROOT, 'm16_full', PP, f), os.path.join(ROOT, PREP, f))
+if os.environ.get('INIT'):                                                                      # Test 2.5: start from another run's weights (path in the repo)
+    os.environ['INIT'] = hf_hub_download(repo, os.environ['INIT'], repo_type='dataset', local_dir=ROOT)
 log('data ready; cached preparations', len(os.listdir(os.path.join(ROOT, PREP))))
 e = dict(os.environ, OUT=OUT, REPO=repo, EXCLUDE=os.path.join(ROOT, 'm16_full', 'align', 'prep_v3_exclude.json')); lines = []
 p = subprocess.Popen([sys.executable, '-u', 'flow_f1.py', ROOT, os.environ.get('TF_STEPS', '4000'), TF] + ([LIMIT] if LIMIT else []), cwd=code, env=e, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

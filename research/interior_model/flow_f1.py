@@ -158,6 +158,8 @@ if __name__ == '__main__':
     if os.path.exists(last):
         ck = torch.load(last, map_location=DEV); net.load_state_dict(ck['net']); ema.load_state_dict(ck['ema']); opt.load_state_dict(ck['opt']); sched.load_state_dict(ck['sched']); state = ck['state']
         rng = np.random.default_rng(state['step']); log('resumed at step', state['step'])
+    elif os.environ.get('INIT') and os.path.exists(os.environ['INIT']):                                       # Test 2.5: continue from another run's weights (fresh optimiser and schedule)
+        ck = torch.load(os.environ['INIT'], map_location=DEV); net.load_state_dict(ck['state_dict']); ema.load_state_dict(ck['state_dict']); log('initialised from', os.environ['INIT'], 'step', ck.get('step'))
     torch.cuda.reset_peak_memory_stats(); t2 = time.time(); start = state['step']; every = max(1, steps // int(CFG.get('evals', 20))); gt = torch.Generator(device=DEV); gt.manual_seed(start)
     def evaluate(it, tl):
         gv = torch.Generator(device=DEV); gv.manual_seed(12345)
