@@ -226,3 +226,62 @@ Median Dice over classes, 55 test people, both models at 20,000 steps and 14.6 M
 | F7 | Continuous decoder: the autoencoder's decoder answers "which structure is at this point" for any point; meshes are extracted from the boundaries between regions (one answer per point, so no overlaps or gaps). The generator and tokens are unchanged | smoother surfaces and thin structures (eye lens, muscle sheets) survive; kept if the rig needs it | autoencoder retraining only |
 
 Direct triangle generation (face-by-face mesh models) is not planned: it gives no guarantee that many nested structures are closed and do not intersect. A fixed template mesh bent to each person is kept in mind for bones only, where a consistent vertex layout helps the rig.
+
+## 12. Fascia and tendons, 2026-11-25
+
+User priority: fascia and tendons matter for the flesh physics; vessels and nerves do not. The model has no fascia or
+tendon class. No open CT label set marks them, and on CT they look like muscle. The R3 teacher expects fat and fascia
+from this model.
+
+### 12.1 Mini test F8a: fascia as boundaries between predicted regions (local, CPU)
+
+`research/interior_model/fascia_boundaries.py`. On the 42 test pelvises of the F1 run (3 mm voxels, predictions after
+the decoding fix), three surfaces are read off the labels: fat | muscle (deep fascia), muscle | another muscle (septa),
+muscle | bone (attachments). They are compared with the same surfaces in the true labels. The baseline is another test
+person's true labels in the same frame, i.e. a population guess. Medians over people:
+
+| Surface | Model: within 6 mm | Other person: within 6 mm | Model: median distance | Other person: median distance |
+|---|---|---|---|---|
+| fat \| muscle | 0.60 | 0.33 | 5.2 mm | 9.5 mm |
+| muscle \| muscle | 0.53 | 0.51 | 6.0 mm | 6.0 mm |
+| muscle \| bone | 0.72 | 0.56 | 4.2 mm | 5.2 mm |
+
+Findings:
+- The deep fascia surface carries real information about the person: about half the population guess's error and a
+  90th percentile of 12 mm against 26 mm. The model's predicted area is close to the truth (2,546 cm² against 2,618 cm²).
+- Septa are no better than the population guess, and the model draws only about two thirds of their true area
+  (1,316 cm² against 1,951 cm²). In the truth they are also incomplete, because "muscle_other" lumps many muscles together.
+  The shell says little about where one muscle ends and the next begins, so septa need a prior, not the boundary alone.
+- Attachments to bone are better than the guess, but a 4 mm median is more than one voxel.
+- Distances are in steps of 3 mm voxels. The continuous decoder (F7) is expected to tighten all three; measure it with the same script.
+
+### 12.2 Mini test F8b: where the atlas puts its fascia (Z-Anatomy, CC BY-SA, local)
+
+Distance from each atlas fascia sheet to the atlas's own muscles, skin and bone (median / 90th percentile):
+
+| Sheet | to muscle | to skin | to bone |
+|---|---|---|---|
+| Fascia lata | 3.2 / 8.2 mm | 14 / 31 mm | 41 mm |
+| Iliotibial tract | 4.1 / 11.4 mm | 17 / 31 mm | 21 mm |
+| Thoracolumbar fascia, posterior layer | 1.5 / 2.5 mm | 22 / 32 mm | 15 mm |
+| Temporal fascia, superficial layer | 0.9 / 1.7 mm | 4.5 / 8.0 mm | 4.6 mm |
+| Masseteric fascia | 1.1 / 2.3 mm | 6.7 / 9.2 mm | 4.8 mm |
+| Iliopsoas fascia | 9.0 / 28.5 mm | 76 / 91 mm | 17 mm |
+| Epicranial aponeurosis | 20 / 55 mm | 5.2 / 8.3 mm | 4.2 mm |
+
+Findings:
+- Most sheets wrap muscle within a few millimetres, so their place is the fat | muscle surface the model already gives
+  (12.1). The atlas is needed only to say which patch is which sheet (fascia lata, IT tract), and each sheet's thickness
+  and stiffness should come from published measurements.
+- Two do not follow the muscle: the epicranial aponeurosis (scalp) runs between skin and bone, and the iliopsoas fascia
+  needs checking. They need their own placement.
+- Tendons: the exported atlas has origin and insertion areas for the hip muscles (gluteus max/med/min, iliopsoas,
+  piriformis, obturators, gemelli, quadratus femoris, tensor fasciae latae, sartorius, rectus femoris) and for the
+  chewing and some expression muscles (masseter, temporalis, zygomaticus, orbicularis oris and oculi, frontalis). A
+  tendon can be placed as the path from the predicted muscle's end to its attachment area on the predicted bone.
+
+### 12.3 Proposed steps (not built)
+- F8 fascia: deep fascia = the predicted fat | muscle surface (after F7). Atlas fascia sheets are fitted onto it only to
+  name the patches. Thickness and stiffness per sheet come from the literature.
+- F9 septa and tendons: from the atlas muscles fitted to the predicted bones and named muscles, the same fit that places
+  the expression muscles. Score the septa with 12.1's script against the population guess.
