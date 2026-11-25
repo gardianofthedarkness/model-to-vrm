@@ -315,3 +315,16 @@ Decisions and notes:
 - Next autoencoder: make it independent of tile size (no GroupNorm, or a norm with fixed statistics) and encode in
   crop-sized tiles too. The data preparation still encodes in 96-voxel tiles.
 - Lesson: an autoencoder's own reconstruction score must use the same encode and decode path as sampling.
+
+Full v3 run (pelvis and face, 40,000 steps) re-scored with the fixed decoding, one draw / majority of 3, test people:
+
+| Part | Old decoding | Fixed decoding | Nearest person |
+|---|---|---|---|
+| Face | 0.216 / 0.236 | **0.274 / 0.304** | 0.269 |
+| Face, covered by hair | 0.224 / 0.248 | 0.285 / 0.323 | 0.111 |
+| Pelvis | 0.502 / 0.545 | 0.512 / 0.552 | 0.454 |
+| Pelvis, covered | 0.467 / 0.508 | 0.444 / 0.471 | 0.438 |
+
+The face is now above nearest person, sinus 0.63 against 0.69. The covered pelvis got slightly worse with the 16-token
+pelvis tiles. F1's scores (old decoding) are not comparable: different test people and frame, and they are also
+underestimates.
