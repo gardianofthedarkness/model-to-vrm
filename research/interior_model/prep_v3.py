@@ -11,7 +11,7 @@ Per person and part (face: head frame window at 1 mm, 8 mm tokens; pelvis: 3 mm,
                      shell. The shell the model reads includes the cover; the target labels say 'outside' there.
             <c>~m    face only, training only: mirrored about the frame's midplane with left/right labels swapped
 3. Per copy: body tokens (cells holding shell-body voxels), shell features (signed distance pooled to 4^3, share of the
-   cell inside the scan, share of the cell's body that is cover), positions, the autoencoder's codes of the TRUE labels,
+   cell inside the scan, share of the cell's outer surface that is hair or cloth), positions, the autoencoder's codes of the TRUE labels,
    the true labels (for scoring) and the cover mask.
 Output: <root>/<OUT>/<key>_<part>.npz.  env: OUT (default prep_v3_TF8), FACE_AE (default face_compress_v2/autoencoder_t8.pt),
 SHARD i/n.  args: <interior_data root> <align dir> <covers dir>"""
@@ -40,7 +40,9 @@ def tokens(L, cover, mm, F, ae, NC, fill):
     blk = lambda A: A.reshape(G[0], F, G[1], F, G[2], F).transpose(0, 2, 4, 1, 3, 5)
     idx = np.argwhere(blk(shell).reshape(*G, -1).any(-1)); p = F // 4 if F >= 4 else 1
     Dp = blk(D).reshape(*G, 4, p, 4, p, 4, p).mean((4, 6, 8)) if p > 1 else blk(D)
-    cs = blk(cover).reshape(*G, -1).sum(-1) / np.maximum(blk(shell).reshape(*G, -1).sum(-1), 1)
+    surf = shell & ndi.binary_dilation(~shell & (S != UNK))                                  # outer surface of the shell (not the scan's cut faces)
+    cs = blk(surf & cover).reshape(*G, -1).sum(-1) / np.maximum(blk(surf).reshape(*G, -1).sum(-1), 1)   # share of the cell's outer surface that is hair or cloth: what a
+                                                                                               # character gives (surface vertices marked loose); under its hair there is no skin surface
     feat = np.concatenate([Dp[tuple(idx.T)].reshape(len(idx), -1), blk(known).reshape(*G, -1).mean(-1)[tuple(idx.T)][:, None], cs[tuple(idx.T)][:, None]], 1).astype(np.float32)
     pos = ((idx + 0.5) * F * mm / 100.0).astype(np.float32)
     code = encode(ae, L, NC, F)
