@@ -21,8 +21,12 @@ for part, (mm, lo, hi) in CFG.items():
     g = np.load(os.path.join(guess, 'elf_%s.npz' % part)); o, A, s0 = g['origin'], g['axes'], float(g['scale_mm_per_unit'])
     Vf = (V - o) @ A.T * s0; inw = ((Vf > lo) & (Vf < hi)).all(1)                              # first guess: keypoint frame and size
     mean = MeanShell.load(os.path.join(alignd, '%s_mean.npz' % part))
-    skin = Vf[inw & ~loose]; skin = skin[:: max(1, len(skin) // 30000)]
-    x, ap = fit(skin, mean); sf = float(np.exp(x[0])); Q = Rotation.from_rotvec(x[1:4]).as_matrix(); b = x[4:7]
+    fitset = inw if part in os.environ.get('FIT_ALL', '').split(',') else inw & ~loose          # FIT_ALL=pelvis: fit on every vertex. A swimsuit marked loose lies on the skin, and
+    skin = Vf[fitset]; skin = skin[:: max(1, len(skin) // 30000)]                                # without it the elf's pelvis window has only two thighs, which do not fix a pelvis
+    if part in os.environ.get('NOFIT', '').split(','):                                         # NOFIT=pelvis: keep the first guess. Fitting a character's pelvis to the mean shell
+        x = np.zeros(7); ap = lambda x_, p: np.exp(x_[0]) * Rotation.from_rotvec(x_[1:4]).apply(p) + x_[4:7]   # turned it 54-91 degrees (2026-11-25); open problem
+    else: x, ap = fit(skin, mean)
+    sf = float(np.exp(x[0])); Q = Rotation.from_rotvec(x[1:4]).as_matrix(); b = x[4:7]
     Y = ap(x, Vf)                                                                                # every vertex in the shell frame, mm
     shape = np.round((hi - lo) / mm).astype(int); ax = [lo[i] + mm * (np.arange(shape[i]) + 0.5) for i in range(3)]
     P = np.stack(np.meshgrid(*ax, indexing='ij'), -1).reshape(-1, 3)
