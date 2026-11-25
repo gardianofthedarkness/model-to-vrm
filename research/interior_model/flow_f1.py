@@ -99,9 +99,11 @@ if __name__ == '__main__':
     # ---- people from the preparation cache (training needs no labels)
     class Ent: pass
     data = {}; t1 = time.time()
+    EXCL = json.load(open(os.environ['EXCLUDE']))['people'] if os.environ.get('EXCLUDE') and os.path.exists(os.environ['EXCLUDE']) else {}   # people whose shell fit failed (far outliers)
     for f in sorted(os.listdir(cache)):
+        if not f.endswith('.npz'): continue
         key, part = f[:-4].rsplit('_', 1)
-        if part not in PARTS: continue
+        if part not in PARTS or key.split('~')[0] in EXCL.get(part, []): continue
         base = key.split('~')[0]; z = np.load(os.path.join(cache, f)); e = Ent(); e.name, e.key, e.base, e.F, e.mm, e.file = part, key, base, aes[part][1], MM[part], os.path.join(cache, f); e.has_L = 'L' in z.files
         e.idx, e.feat, e.pos = z['idx'], z['feat'], z['pos']; code = z['code'].astype(np.float32); e.G = code.shape[1:]; e.raw = code[(slice(None),) + tuple(e.idx.T)].T.copy()
         occ = np.zeros(e.G, bool); occ[tuple(e.idx.T)] = True
