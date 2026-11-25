@@ -17,6 +17,8 @@ of the same organ. Painting order: brightness classes, TotalSegmentator, then ex
 Per head: which classes are known (unknown ones are ignored by the loss), the labeller (expert / totalsegmentator),
 native voxel size. Skull-scan heads are kept only if every TotalSegmentator face class found in all 42 HaN-Seg heads
 is also found in them (drops speck skulls and heads cut above or through the face).
+Face label repair (2026-11-25): HaN-Seg heads also get brain, trachea and C1-C7 from TotalSegmentator's general model
+(head_v1_total in the HaN-Seg repo, written by head_job.py with TASKS=total), painted only over plain tissue.
 SOURCE=hanseg | ts.  args: <repo> [limit]"""
 import os, sys, csv, json, time, zipfile, numpy as np
 t0 = time.time()
@@ -74,6 +76,12 @@ def one_hanseg(arg):
             X = TS[t][tsl]
             for n, k in inv[t].items():
                 if n != 'head': L[(X == k) & B] = ids[n]
+        if case in _G.get('total', {}):                                                       # general-model structures this source never drew (brain, trachea, C1-C7); expert outlines still win
+            tf, tmap = _G['total'][case]; X = np.load(tf)['total'][tsl]; tinv = {v: int(k) for k, v in tmap.items()}
+            for nm in V1_NEW:
+                if nm in tinv: L[(X == tinv[nm]) & B & np.isin(L, [1, 2, 3, 4, 5])] = ids[nm]      # only over plain tissue, never over a head-task structure
+            known_total = [ids[nm] for nm in V1_NEW if nm in tinv]
+        else: known_total = []
         cache = {}
         def ex(name):
             f = [f for f in files if f.endswith('_OAR_%s.seg.nrrd' % name)]
@@ -83,7 +91,7 @@ def one_hanseg(arg):
                 a = sitk.GetArrayFromImage(im).any(-1).astype(np.uint8); j = sitk.GetImageFromArray(a); j.CopyInformation(im); im = j
             r = sitk.Resample(sitk.Cast(im > 0, sitk.sitkUInt8), ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0)
             return sitk.GetArrayFromImage(r).transpose(2, 1, 0)[sl] > 0
-        known = [0, 1, 2, 3, 4, 5] + [ids[n] for t in TS_TASKS for n in inv[t] if n != 'head']
+        known = [0, 1, 2, 3, 4, 5] + [ids[n] for t in TS_TASKS for n in inv[t] if n != 'head'] + known_total
         for n, en in EXPERT_EQUIV.items():                                                    # expert replaces the equivalent class
             ms = [m for m in (ex(e) for e in en) if m is not None]
             if not ms: continue
@@ -134,7 +142,12 @@ if __name__ == '__main__':
     from huggingface_hub import HfApi, hf_hub_download, snapshot_download
     api = HfApi(); repo = sys.argv[1]; limit = int(sys.argv[2]) if len(sys.argv) > 2 else 0; SRC = os.environ.get('SOURCE', 'hanseg')
     HS, TSR = 'gardianofthedarkness/hanseg-ct-mr', 'gardianofthedarkness/totalsegmentator-ct-v201'
-    hs = snapshot_download(HS, repo_type='dataset', allow_patterns=['head_v1/*.json'] + (['head_v1/*.npz'] if SRC == 'hanseg' else []))
+    hs = snapshot_download(HS, repo_type='dataset', allow_patterns=['head_v1/*.json'] + (['head_v1/*.npz', 'head_v1_total/*'] if SRC == 'hanseg' else []))
+    tot = {}                                                                                 # face label repair: TotalSegmentator 'total' labels on HaN-Seg (brain, trachea, vertebrae ...)
+    if os.path.isdir(os.path.join(hs, 'head_v1_total')):
+        for f in os.listdir(os.path.join(hs, 'head_v1_total')):
+            if f.endswith('.json'): d = json.load(open(os.path.join(hs, 'head_v1_total', f))); tot.update({c: (os.path.join(hs, 'head_v1_total', c + '.npz'), d['tasks']['total']) for c, s_ in d['stats'].items() if isinstance(s_, dict)})
+    log('general-model labels for', len(tot), 'HaN-Seg heads')
     hstats, tasks = {}, None
     for f in os.listdir(os.path.join(hs, 'head_v1')):
         if f.endswith('.json'): d = json.load(open(os.path.join(hs, 'head_v1', f))); hstats.update(d['stats']); tasks = d['tasks']
@@ -154,7 +167,7 @@ if __name__ == '__main__':
         cases = sorted(c for c, s in hstats.items() if isinstance(s, dict))
         if limit: cases = cases[:limit]
         nw = max(1, min(int(cpus), int(ram // 7))); log('hanseg', len(cases), 'workers', nw)
-        with Pool(nw, _init, (zp, dict(ids=ids, tasks=tasks)), maxtasksperchild=4) as p:
+        with Pool(nw, _init, (zp, dict(ids=ids, tasks=tasks, total=tot)), maxtasksperchild=4) as p:
             for c, r in p.imap_unordered(one_hanseg, [(c, [n for n in names if '/%s/' % c in n], hstats[c], os.path.join(hs, 'head_v1', c + '.npz'), out_dir) for c in cases]): stats[c] = r; log(c, r if isinstance(r, str) else r['shape'])
         target = HS
     else:

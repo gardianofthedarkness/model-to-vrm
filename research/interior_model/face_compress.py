@@ -9,7 +9,8 @@ channels, conv decoder, cross-entropy weighted by (voxel share)^-1/2, unknown vo
   t12   3 mm labels, F=4  -> 12 mm tokens  (fixed whole-body grid), decoded labels upsampled to 1 mm for scoring
 All scored at 1 mm on the test heads: Dice per class against its thickness (twice the mean inside distance, mm),
 key thin structures listed. Profile per variant: peak GPU memory, seconds per step. Also: tokens inside the body per
-head for each token size. Runs on the local GTX 1650 (fp16). args: <data dir> <steps> [variants]"""
+head for each token size. Runs on the local GTX 1650 (fp16). args: <data dir> <steps> [variants]
+env: MARGINAL=1 marginal loss for classes a head's source never draws (face label repair, 2026-11-25); OUTDIR output folder."""
 import os, sys, json, time, numpy as np
 import torch, torch.nn as nn
 t0 = time.time()
@@ -70,7 +71,9 @@ if __name__ == '__main__':
         split = {c: v['split'] for c, v in heads.items()}
         if os.environ.get('LIMIT'): keep = {s: [c for c in sorted(heads) if split[c] == s][:int(os.environ['LIMIT'])] for s in ('train', 'val', 'test')}; heads = {c: heads[c] for v in keep.values() for c in v}
         variants = ['t12']
-    names = {v: k for k, v in ids.items()}; NC = max(ids.values()) + 1; OUT = os.path.join(root, '%s_compress' % PART)
+    names = {v: k for k, v in ids.items()}; NC = max(ids.values()) + 1; OUT = os.path.join(root, os.environ.get('OUTDIR', '%s_compress' % PART))
+    MARGINAL = os.environ.get('MARGINAL') == '1'                                                 # face label repair: a source that never draws a class is not charged for it
+    MISS = {c: sorted(set(range(7, NC)) - set(heads[c].get('known', range(NC)))) for c in heads} if PART == 'face' else {c: [] for c in heads}
     vols = {c: np.load(os.path.join(D, c + '.npz'))['labels'] for c in heads}
     sp = {s: [c for c in heads if split[c] == s] for s in ('train', 'val', 'test')}; log({s: len(v) for s, v in sp.items()}, 'classes', NC)
     body = {c: (v > 0) & (v < UNK) for c, v in vols.items()}
@@ -84,23 +87,36 @@ if __name__ == '__main__':
         F, ds = {'t4': (4, 1), 't8': (8, 1), 't12': (4, 3 if PART == 'face' else 1)}[var]; C = 8; S = 64
         V = {c: v[::ds, ::ds, ::ds] for c, v in vols.items()}
         rng = np.random.default_rng(0); BI = {c: np.argwhere((v[::4, ::4, ::4] > 0) & (v[::4, ::4, ::4] < UNK)) * 4 for c, v in V.items()}
-        def crop(cs, n):
+        def crop(cs, n, who=None):
             out = np.full((n, S, S, S), NC, np.int64)
             for i in range(n):
-                c0 = cs[rng.integers(len(cs))]; L = V[c0]; ctr = BI[c0][rng.integers(len(BI[c0]))]                    # crop centred on a body voxel
+                c0 = cs[rng.integers(len(cs))]; L = V[c0]
+                if who is not None: who.append(c0); ctr = BI[c0][rng.integers(len(BI[c0]))]                    # crop centred on a body voxel
                 o = [int(np.clip(q - S // 2, 0, max(0, d - S))) for q, d in zip(ctr, L.shape)]; c_ = L[o[0]:o[0] + S, o[1]:o[1] + S, o[2]:o[2] + S]
                 out[i, :c_.shape[0], :c_.shape[1], :c_.shape[2]] = np.where(c_ == UNK, NC, c_)
             return torch.tensor(out, device=dev)
         net = make_ae(NC, F, C).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
-        scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); lossf = nn.CrossEntropyLoss(weight=wts, ignore_index=NC); valb = [crop(sp['val'], 2) for _ in range(6)]; best = (np.inf, None, 0)
+        scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); ce = nn.CrossEntropyLoss(weight=wts, ignore_index=NC)
+        def lossf(lg, y, who=None):
+            """weighted cross-entropy; with MARGINAL, a plain-tissue voxel (classes 1-6) of a head whose source never draws classes M
+            is scored by log(p_y + sum over M of p_k) (Shi et al., marginal loss), so the code is free to hold the structure it cannot see."""
+            if not (MARGINAL and who) or not any(MISS[c] for c in who): return ce(lg, y)
+            lp = torch.log_softmax(lg, 1); valid = y != NC; yc = y.clamp(max=NC - 1); lt = lp.gather(1, yc[:, None])[:, 0]
+            rows = []
+            for i, c in enumerate(who):
+                if MISS[c]: gen = (y[i] >= 1) & (y[i] <= 6); rows.append(torch.where(gen, torch.logaddexp(lt[i], torch.logsumexp(lp[i, MISS[c]], 0)), lt[i]))
+                else: rows.append(lt[i])
+            lt = torch.stack(rows)
+            w = wts[yc] * valid; return -(lt * w).sum() / w.sum()
+        valw = [[] for _ in range(6)]; valb = [crop(sp['val'], 2, valw[i]) for i in range(6)]; best = (np.inf, None, 0)
         torch.cuda.reset_peak_memory_stats(); t1 = time.time(); bs = int(os.environ.get('BS', '2'))
         for it in range(steps):
-            net.train(); x = crop(sp['train'], bs); y = x.clone()
-            with torch.autocast('cuda', dtype=AMP or torch.float32, enabled=AMP is not None): loss = lossf(net(x).float(), y)
+            net.train(); who = []; x = crop(sp['train'], bs, who); y = x.clone()
+            with torch.autocast('cuda', dtype=AMP or torch.float32, enabled=AMP is not None): loss = lossf(net(x).float(), y, who)
             opt.zero_grad(); scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); sched.step()
             if it % max(1, steps // 20) == 0 or it == steps - 1:
                 net.eval()
-                with torch.no_grad(), torch.autocast('cuda', dtype=AMP or torch.float32, enabled=AMP is not None): vl = float(np.mean([lossf(net(b).float(), b).item() for b in valb]))
+                with torch.no_grad(), torch.autocast('cuda', dtype=AMP or torch.float32, enabled=AMP is not None): vl = float(np.mean([lossf(net(b).float(), b, w).item() for b, w in zip(valb, valw)]))
                 if np.isfinite(vl) and vl < best[0]: best = (vl, {k: v.detach().clone() for k, v in net.state_dict().items()}, it)
                 log(var, 'step', it, 'train %.4f val %.4f' % (loss.item(), vl), 'peak GB %.2f' % (torch.cuda.max_memory_allocated() / 1e9))
         sec_step = (time.time() - t1) / steps; peak = torch.cuda.max_memory_allocated() / 1e9
