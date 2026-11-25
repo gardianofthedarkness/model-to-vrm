@@ -51,7 +51,8 @@ def fit(points, mean, x0=None, scale=True):
     def res(x):
         r = mean(apply(x if scale else np.r_[0.0, x[1:]], points)); return np.where(np.isfinite(r), r, 0.0)
     r0 = mean(apply(x0, points)); r0 = r0[np.isfinite(r0)]; f = 1.4826 * np.median(np.abs(r0 - np.median(r0))) if len(r0) else 1.0
-    sol = least_squares(res, x0, loss='cauchy', f_scale=max(f, 1e-3), x_scale=np.r_[0.05, 0.05, 0.05, 0.05, 5, 5, 5])
+    lb = np.r_[x0[0] + np.log(2 / 3) if scale else -np.inf, [-np.inf] * 6]; ub = np.r_[x0[0] + np.log(1.5) if scale else np.inf, [np.inf] * 6]   # size searched within 2/3..3/2 of the start:
+    sol = least_squares(res, x0, loss='cauchy', f_scale=max(f, 1e-3), x_scale=np.r_[0.05, 0.05, 0.05, 0.05, 5, 5, 5], bounds=(lb, ub))      # a body shrunk to a point would sit on the skin exactly
     return sol.x, apply
 
 def perturb(points, s, rotvec, b):                                                         # move a shell by a known similarity

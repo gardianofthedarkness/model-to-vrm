@@ -13,7 +13,7 @@ Per person and part (face: head frame window at 1 mm, 8 mm tokens; pelvis: 3 mm,
 3. Per copy: body tokens (cells holding shell-body voxels), shell features (signed distance pooled to 4^3, share of the
    cell inside the scan, share of the cell's outer surface that is hair or cloth), positions, the autoencoder's codes of the TRUE labels,
    the true labels (for scoring) and the cover mask.
-Output: <root>/<OUT>/<key>_<part>.npz.  env: OUT (default prep_v3_TF8), FACE_AE (default face_compress_v2/autoencoder_t8.pt),
+Output: <root>/<OUT>/<key>_<part>.npz.  env: OUT (default prep_v3_TF8), FACE_AE (default face_compress_v3/autoencoder_t8.pt),
 SHARD i/n.  args: <interior_data root> <align dir> <covers dir>"""
 import os, sys, json, time, numpy as np, torch
 from scipy import ndimage as ndi
@@ -61,7 +61,7 @@ if __name__ == '__main__':
             o = {'left': 'right', 'right': 'left', 'L': 'R', 'R': 'L'}[m.group(2)]; q = '%s_%s' % (m.group(1), o)
             if q in ids: swap[k] = ids[q]
     PARTS = {}
-    for part, folder, members, mm, lo, NC, ck, fill in (('face', 'face_v1_headframe', fi['heads'], 1.0, np.array(fi['window_lo_mm']), max(ids.values()) + 1, os.environ.get('FACE_AE', 'face_compress_v2/autoencoder_t8.pt'), 3),
+    for part, folder, members, mm, lo, NC, ck, fill in (('face', 'face_v1_headframe', fi['heads'], 1.0, np.array(fi['window_lo_mm']), max(ids.values()) + 1, os.environ.get('FACE_AE', 'face_compress_v3/autoencoder_t8.pt'), 3),
                                                        ('pelvis', 'pelvis_v1', pi['people'], 3.0, np.array(pi['window_lo_mm']), len(pi['classes']), 'pelvis_compress/autoencoder_t12.pt', 5)):
         c = torch.load(os.path.join(root, ck), map_location=DEV); ae = make_ae(NC, c['F'], c['C']).to(DEV); ae.load_state_dict(c['state_dict']); ae.eval()
         al = json.load(open(os.path.join(alignd, '%s.json' % part)))['recovery']['all three']; cv = np.load(os.path.join(coverd, 'cover_%s.npz' % part))
