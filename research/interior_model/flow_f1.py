@@ -22,7 +22,7 @@ import os, sys, json, time, math, numpy as np
 import torch, torch.nn as nn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import make_ae
-from transformer_smoke import tiles, decode, AMP, UNK, DEV, log
+from transformer_smoke import tiles, decode, encode, AMP, UNK, DEV, log
 from scipy import ndimage as ndi
 CFG = dict(kv.split('=') for kv in os.environ.get('CFG', '').split(',') if kv)
 PARTS = CFG.get('parts', 'pelvis').split('+'); D = int(CFG.get('d', 384)); LAYERS = int(CFG.get('layers', 8)); DRAWS = int(CFG.get('draws', 3)); VALN = int(CFG.get('valn', 8))
@@ -186,9 +186,17 @@ if __name__ == '__main__':
         z = torch.randn((1, N, C), device=DEV, generator=g); rev = torch.zeros((1, N), dtype=torch.bool, device=DEV)
         for i in range(n): z = z + run(ema, z, i / n, rev, cd) / n
         return z[0].cpu().numpy()
+    bases = {}
+    def base(e):
+        """codes for the tokens the model does not generate: the autoencoder's own codes of the shell-only volume (outside, unknown, one
+        generic tissue inside the body). The decoder reads its neighbours; zeros there are not a code it knows and made it paint a few
+        classes (right parotid, right eye, brainstem) over plain tissue next to the body's edge. Found 2026-11-24."""
+        if (e.key, e.name) not in bases:
+            L = labels(e); bases.clear(); bases[(e.key, e.name)] = encode(aes[e.name][0], np.where((L > 0) & (L < UNK), 3 if e.name == 'face' else 5, L), NCS[e.name], e.F)
+        return bases[(e.key, e.name)]
     @torch.no_grad()
     def to_labels(e, z):
-        ae, F, _ = aes[e.name]; grid = np.zeros((C, *e.G), np.float32); grid[(slice(None),) + tuple(e.idx.T)] = (z * norm[e.name][1] + norm[e.name][0]).T
+        ae, F, _ = aes[e.name]; grid = base(e).copy(); grid[(slice(None),) + tuple(e.idx.T)] = (z * norm[e.name][1] + norm[e.name][0]).T
         P = np.zeros([g * F for g in e.G], np.uint8)
         for a, b, m in tiles(e.G, 24, 4):
             with torch.autocast('cuda', dtype=AMP, enabled=AMP != torch.float32): lg = decode(ae, torch.tensor(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]], device=DEV)).float().argmax(1)[0].cpu().numpy()
@@ -264,6 +272,6 @@ if __name__ == '__main__':
         s['inside_training_range'] = {w: dict(zip(('volume', 'pieces', 'centre'), [round(float(x), 3) for x in np.mean(v, 0)])) for w, v in plaus[p].items()}
         s['shell_fidelity_iou'] = round(float(np.mean(shellfid[p])), 4); s['agreement_between_draws'] = round(float(np.mean(agree[p])), 3)
     res['test_results'] = summ; res['test_seconds_per_person'] = round((time.time() - t3) / max(1, len(sp['test'])), 1)
-    json.dump(res, open(os.path.join(out, 'flow_f1.json'), 'w'), indent=1)
+    res['decode'] = 'shell-volume codes in tokens without body'; json.dump(res, open(os.path.join(out, 'flow_f1_shellfill.json'), 'w'), indent=1)
     log('SUMMARY', json.dumps({k: v for k, v in res.items() if k not in ('test_results', 'curve', 'code_mean', 'code_std')}),
         json.dumps({p: {w: v for w, v in d.items() if not isinstance(v, dict) or w == 'inside_training_range'} for p, d in summ.items()}))

@@ -25,7 +25,7 @@ import os, sys, re, json, time, numpy as np
 import torch, torch.nn as nn, torch.nn.functional as Fn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import make_ae
-from transformer_smoke import tiles, decode, Part, dice_table, AMP, UNK, DEV, log
+from transformer_smoke import tiles, decode, encode, Part, dice_table, AMP, UNK, DEV, log
 from scipy.ndimage import distance_transform_edt as edt
 BONE = re.compile(r'^(mandible|skull|teeth_|hard_palate|vertebrae_|hip|sacrum|femur_|lumbar|dense)')     # bone classes by name (anatomy, not a tuned value)
 SIDE = re.compile(r'^(.*)_(left|right|L|R)$')
@@ -213,7 +213,8 @@ if __name__ == '__main__':
         with torch.no_grad(), torch.autocast('cuda', dtype=AMP, enabled=AMP != torch.float32): pred = net(feat, pos, part, code, rev, ncode, nhas).float()[0].cpu().numpy()
         o = 0
         for p in parts:
-            n = len(p.idx); grid = np.zeros_like(p.code); grid[(slice(None),) + tuple(p.idx.T)] = pred[o:o + n].T; o += n; ae, F, _, NC = aes[p.name]
+            ae, F, _, NC = aes[p.name]; n = len(p.idx); grid = encode(ae, np.where((p.L > 0) & (p.L < UNK), 3 if p.name == 'face' else 5, p.L), NC, F)   # tokens without body: codes of the shell-only volume, not zeros (zeros made the decoder paint filler classes; found 2026-11-24)
+            grid[(slice(None),) + tuple(p.idx.T)] = pred[o:o + n].T; o += n
             P = np.zeros(p.L.shape, np.uint8)
             for a, b, m in tiles(p.G, 24, 4):
                 with torch.no_grad(), torch.autocast('cuda', dtype=AMP, enabled=AMP != torch.float32): lg = decode(ae, torch.tensor(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]], device=DEV)).float().argmax(1)[0].cpu().numpy()
@@ -234,5 +235,5 @@ if __name__ == '__main__':
             keys = sorted({k for r in rows for k in r}); summ.setdefault(part, {})[who] = {k: round(float(np.median([r[k] for r in rows if k in r])), 3) for k in keys}
             summ[part][who + '_median_over_classes'] = round(float(np.median(list(summ[part][who].values()))), 3)
     res['test'] = summ; res['people'] = {s: len(v) for s, v in sp.items()}
-    json.dump(res, open(os.path.join(out, 'transformer_v2_TF%d.json' % TF), 'w'), indent=1)
+    json.dump(res, open(os.path.join(out, 'transformer_v2_TF%d_shellfill.json' % TF), 'w'), indent=1)
     log('SUMMARY', json.dumps({k: v for k, v in res.items() if k not in ('test', 'curve')}), json.dumps({p: {w: v for w, v in d.items() if w.endswith('median_over_classes')} for p, d in summ.items()}))
