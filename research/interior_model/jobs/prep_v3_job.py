@@ -3,7 +3,7 @@
 # ///
 """Preparation v3 (prep_v3.py) for all people on one card: downloads the label sets, the autoencoders, the mean shells and
 fit-recovery results (m16_full/align), the cover templates (m16_full/covers); runs prep_v3.py in parallel shards (one per
-core the memory allows); uploads the result to m16_full/<OUT>. env: COMMIT, OUT (default prep_v3_TF8), FACE_AE. args: <repo>"""
+core the memory allows); uploads the result to m16_full/<OUT>. env: COMMIT, OUT (default prep_v3_TF8), FACE_AE, PARTS. args: <repo>"""
 import os, sys, time, subprocess, urllib.request, shutil
 from huggingface_hub import HfApi, snapshot_download
 t0 = time.time()
@@ -13,8 +13,8 @@ os.makedirs('code', exist_ok=True)
 for f in ('face_compress.py', 'transformer_smoke.py', 'transformer_v2.py', 'shell_align.py', 'prep_v3.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 for r in ('gardianofthedarkness/hanseg-ct-mr', repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
-snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*', 'm16_full/face_compress_v3/autoencoder_*.pt', 'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/align/*', 'm16_full/covers/*'])
-for d in ('face_compress_v3', 'pelvis_compress', 'align', 'covers'): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
+snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*', 'm16_full/face_compress_v3/autoencoder_*.pt', 'm16_full/%s/autoencoder_*.pt' % os.environ.get('FACE_AE', 'face_compress_v3/x').split('/')[0], 'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/align/*', 'm16_full/covers/*'])
+for d in ('face_compress_v3', os.environ.get('FACE_AE', 'face_compress_v3/x').split('/')[0], 'pelvis_compress', 'align', 'covers'): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
 try: ram = int(open('/sys/fs/cgroup/memory.max').read()) / 1e9
 except Exception: ram = 30
 try: q, per = open('/sys/fs/cgroup/cpu.max').read().split(); cpus = int(q) // int(per)

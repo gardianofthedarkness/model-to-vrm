@@ -14,7 +14,7 @@ Per person and part (face: head frame window at 1 mm, 8 mm tokens; pelvis: 3 mm,
    cell inside the scan, share of the cell's outer surface that is hair or cloth), positions, the autoencoder's codes of the TRUE labels,
    the true labels (for scoring) and the cover mask.
 Output: <root>/<OUT>/<key>_<part>.npz.  env: OUT (default prep_v3_TF8), FACE_AE (default face_compress_v3/autoencoder_t8.pt),
-SHARD i/n.  args: <interior_data root> <align dir> <covers dir>"""
+SHARD i/n, PARTS (comma list, default all).  args: <interior_data root> <align dir> <covers dir>"""
 import os, sys, json, time, numpy as np, torch
 from scipy import ndimage as ndi
 from scipy.spatial.transform import Rotation
@@ -68,7 +68,8 @@ if __name__ == '__main__':
         PARTS[part] = dict(folder=folder, members=members, mm=mm, lo=lo, NC=NC, ae=ae, F=c['F'], fill=fill, mean=MeanShell.load(os.path.join(alignd, '%s_mean.npz' % part)),
                            jit_mm=float(al['p90_mm']), cover=cv['cover'])
         log(part, 'jitter scale (mm, from the shell-fit recovery error)', PARTS[part]['jit_mm'], 'cover voxels', int(cv['cover'].sum()))
-    work = [(part, c_) for part, P in PARTS.items() for c_ in sorted(P['members']) if os.path.exists(os.path.join(root, P['folder'], c_ + '.npz'))]
+    only = [x for x in os.environ.get('PARTS', '').split(',') if x]                          # PARTS=face: prepare one part only
+    work = [(part, c_) for part, P in PARTS.items() for c_ in sorted(P['members']) if (not only or part in only) and os.path.exists(os.path.join(root, P['folder'], c_ + '.npz'))]
     work = work[SH[0]::SH[1]]; log('shard', SH, len(work), 'part-people'); meta = {}
     for part, c_ in work:
         P = PARTS[part]; mm, lo, F = P['mm'], P['lo'], P['F']; t1 = time.time()
