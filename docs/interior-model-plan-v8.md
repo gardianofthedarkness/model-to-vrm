@@ -328,3 +328,35 @@ Full v3 run (pelvis and face, 40,000 steps) re-scored with the fixed decoding, o
 The face is now above nearest person, sinus 0.63 against 0.69. The covered pelvis got slightly worse with the 16-token
 pelvis tiles. F1's scores (old decoding) are not comparable: different test people and frame, and they are also
 underestimates.
+
+## 14. Next phase: more heads, then two architectures side by side (user direction, 2026-11-25)
+
+Targets are tissue types (fat, lean, bone, air, eye, organ), with names fitted afterwards from Z-Anatomy. Surfaces come
+from the decoded probabilities (50% iso-surface), shown as an interactive 3D page of the elf for each model.
+
+### 14.1 Data first: 400-500 heads with the face in view
+Today: 103 heads (42 HaN-Seg, 61 TotalSegmentator). Only open sources, no emailed agreements. Candidates to count before
+any download beyond a sample:
+
+| Source | Size | Face in view? | Licence / access | Tissue labels |
+|---|---|---|---|---|
+| CQ500 (head CT, Qure.ai) | 491 scans | brain-protocol CT: orbits and nose likely, jaw often cut (to be measured) | CC BY-NC-SA 4.0; download page to be checked for a click-through | CT brightness + TotalSegmentator (brain, eyes) |
+| TotalSegmentator CT v2.0.1, heads dropped by the strict completeness rule | to count | partial | CC BY 4.0, already held | same |
+| IDC whole-body PET/CT with a whole skull | about 7% of scans (3 of 40 in the FDG sample) | yes | CC BY | same |
+| IXI MRI | 581 | yes (not defaced; chin near the edge) | CC BY-SA 3.0, already held | fat and lean from MRI brightness; bone and air look alike on MRI, so a separate step |
+
+Voxels outside a scan stay unknown, so a head cut below the nose still teaches what it shows.
+
+### 14.2 Two directions at 30,000 steps each, run at the same time on the same heads
+- **D1, current pipeline plus shape terms (plan item F3, revised).** The conv autoencoder (with a channel norm, so no
+  tile dependence) and the flow transformer stay. F3's per-voxel terms are replaced by per-tissue shell terms on the
+  decoded one-step estimate: position (soft centroid), size (soft volume), shape (surface distance via distance
+  transforms) and topology (number of pieces and holes; e.g. clDice or Betti matching). Existing implementations first
+  (MONAI losses, published topology losses).
+- **D2, transformer VAE.** A VecSet-style shape VAE (3DShape2VecSet; the design behind Hunyuan3D-2's ShapeVAE and
+  similar to TRELLIS, which is MIT): a fixed set of latent vectors with a KL term, decoded by cross-attention at any query
+  point into tissue probabilities, so meshes come out directly. The flow transformer generates the latent set from the shell.
+  Licences: Hunyuan3D-2 is under Tencent's community licence (not valid in the EU, UK and South Korea); 3DShape2VecSet's
+  licence still to be checked; TRELLIS is MIT.
+- **Comparison.** Test scores per tissue (Dice, surface distance), agreement between draws, the shell-swap test (F6),
+  consistency across reruns, and the elf's 3D page. A cost table comes before either 30,000-step run.
