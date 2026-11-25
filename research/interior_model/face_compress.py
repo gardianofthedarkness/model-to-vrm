@@ -75,6 +75,9 @@ if __name__ == '__main__':
     MARGINAL = os.environ.get('MARGINAL') == '1'                                                 # face label repair: a source that never draws a class is not charged for it
     MISS = {c: sorted(set(range(7, NC)) - set(heads[c].get('known', range(NC)))) for c in heads} if PART == 'face' else {c: [] for c in heads}
     vols = {c: np.load(os.path.join(D, c + '.npz'))['labels'] for c in heads}
+    if PART == 'face' and os.environ.get('TISSUE') == '1':                                       # tissue types (tissue_map.py); a head that never had brain or eyes drawn is not charged for them
+        from tissue_map import remap, table; tab = table(ids); vols = {c: remap(v, ids) for c, v in vols.items()}
+        MISS = {c: sorted({int(tab[k]) for k in MISS[c]} & {ids['brain'], ids['eye_left']}) for c in heads}
     sp = {s: [c for c in heads if split[c] == s] for s in ('train', 'val', 'test')}; log({s: len(v) for s, v in sp.items()}, 'classes', NC)
     body = {c: (v > 0) & (v < UNK) for c, v in vols.items()}
     tokens = {('%d mm' % t): int(np.median([int(np.ceil(m[::t, ::t, ::t].sum())) for m in body.values()])) for t in (4, 6, 8, 12)}   # token cells whose corner voxel is body

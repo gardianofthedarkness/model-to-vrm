@@ -10,7 +10,7 @@ t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 api = HfApi(); repo = sys.argv[1]; ROOT = '/data/interior'; os.makedirs(ROOT, exist_ok=True); C = os.environ['COMMIT']; OUT = os.environ.get('OUT', 'prep_v3_TF8')
 os.makedirs('code', exist_ok=True)
-for f in ('face_compress.py', 'transformer_smoke.py', 'transformer_v2.py', 'shell_align.py', 'prep_v3.py'):
+for f in ('face_compress.py', 'transformer_smoke.py', 'transformer_v2.py', 'shell_align.py', 'prep_v3.py', 'tissue_map.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 for r in ('gardianofthedarkness/hanseg-ct-mr', repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
 snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*', 'm16_full/face_compress_v3/autoencoder_*.pt', 'm16_full/%s/autoencoder_*.pt' % os.environ.get('FACE_AE', 'face_compress_v3/x').split('/')[0], 'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/align/*', 'm16_full/covers/*'])

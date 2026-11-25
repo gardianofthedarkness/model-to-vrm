@@ -10,7 +10,7 @@ t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 api = HfApi(); repo = sys.argv[1]; ROOT = '/data/interior'; os.makedirs(ROOT, exist_ok=True); C = os.environ['COMMIT']; OUT = os.environ.get('OUTDIR', 'face_compress_v2')
 os.makedirs('code', exist_ok=True)
-for f in ('face_compress.py',): urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
+for f in ('face_compress.py', 'tissue_map.py'): urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 for r in ('gardianofthedarkness/hanseg-ct-mr', repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
 log('data ready', len(os.listdir(os.path.join(ROOT, 'face_v1_headframe'))), 'files')
 p = subprocess.Popen([sys.executable, '-u', 'face_compress.py', ROOT, os.environ.get('AE_STEPS', '12000'), os.environ.get('VARIANTS', 't8')], cwd='code', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); lines = []
