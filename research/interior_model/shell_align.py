@@ -35,8 +35,9 @@ class MeanShell:
         s.phi[cnt < max(2, npeople // 2)] = np.nan; s.mm, s.lo, s.G = mm * G, np.asarray(lo, float), G   # kept where at least half of the people have data
         s.fill()
     def fill(s):                                                                               # where fewer than half the people have data, take the nearest defined value:
-        bad = ~np.isfinite(s.phi)                                                              # a point leaving the defined region must not score as a perfect fit
-        if bad.any(): j = ndi.distance_transform_edt(bad, return_distances=False, return_indices=True); s.phi = s.phi[tuple(j)]
+        bad = ~np.isfinite(s.phi)                                                              # a point leaving the defined region must not score as a perfect fit, and the
+        if bad.any():                                                                          # filled region must hold no false skin: |nearest value| + distance to the defined region
+            d, j = ndi.distance_transform_edt(bad, return_distances=True, return_indices=True); s.phi = (np.abs(s.phi[tuple(j)]) + d * s.mm).astype(np.float32)
     @classmethod
     def load(cls, f):
         z = np.load(f); m = cls.__new__(cls); m.phi, m.n, m.lo, m.mm = z['phi'], z['n'], z['lo'], float(z['mm']); m.fill(); return m
