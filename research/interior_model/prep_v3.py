@@ -89,7 +89,7 @@ if __name__ == '__main__':
             copies[c_ + '~h'] = (L, cov)
             if part == 'face' and split.get(c_) == 'train': copies[c_ + '~m'] = (mirror(L, lo[0], mm, swap), np.zeros(L.shape, bool))
             for key, (Lk, ck_) in copies.items():
-                if part == 'face' and os.environ.get('TISSUE') == '1': Lk = remap(Lk, ids)          # tissue types, after mirroring (both eyes become one class)
+                if part == 'face' and os.environ.get('TISSUE') == '1': Lk = remap(Lk, ids)          # tissue types, after mirroring (eyes and brain become one organ class)
                 idx, feat, pos, code, Lc, cc = tokens(Lk, ck_, mm, F, P['ae'], P['NC'], P['fill'])
                 np.savez_compressed(os.path.join(OUT, '%s_%s.npz' % (key, part)), idx=idx.astype(np.int16), feat=feat, pos=pos, code=code.astype(np.float16), L=Lc, cover=np.packbits(cc))
             meta['%s_%s' % (c_, part)] = dict(split=split.get(c_), fit_shift_mm=round(float(np.linalg.norm(b)), 1), fit_turn_deg=round(float(np.degrees(np.linalg.norm(x[1:4]))), 2),
