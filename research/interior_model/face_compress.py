@@ -26,7 +26,7 @@ class ChanNorm(nn.Module):
     def __init__(s, c): super().__init__(); s.g = nn.Parameter(torch.ones(1, c, 1, 1, 1)); s.b = nn.Parameter(torch.zeros(1, c, 1, 1, 1))
     def forward(s, x): m = x.mean(1, keepdim=True); v = x.var(1, keepdim=True, unbiased=False); return (x - m) / torch.sqrt(v + 1e-5) * s.g + s.b
 
-def make_ae(NC, F, C, emb=16, w=32, norm='group'):
+def make_ae(NC, F, C, emb=16, w=32, norm='group', active=None):
     nm = (lambda b: nn.GroupNorm(8, b)) if norm == 'group' else ChanNorm
     def blk(a, b, s=1): return nn.Sequential(nn.Conv3d(a, b, 3, stride=s, padding=1), nm(b), nn.SiLU(), nn.Conv3d(b, b, 3, padding=1), nm(b), nn.SiLU())
     n = int(np.log2(F)); ch = [w * 2 ** i for i in range(n + 1)]
@@ -35,12 +35,17 @@ def make_ae(NC, F, C, emb=16, w=32, norm='group'):
             super().__init__(); s.emb = nn.Embedding(NC + 1, emb); s.inp = blk(emb, ch[0])
             s.down = nn.ModuleList([blk(ch[i], ch[i + 1], 2) for i in range(n)]); s.to_code = nn.Conv3d(ch[n], C, 1); s.from_code = blk(C, ch[n])
             s.up = nn.ModuleList([nn.Sequential(nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False), blk(ch[i + 1], ch[i])) for i in reversed(range(n))]); s.out = nn.Conv3d(ch[0], NC, 1)
+            if norm != 'group':                                                                # classes that never occur are left out of the vote (a fixed part of the model)
+                cm = torch.zeros(NC)
+                if active is not None: cm[[k for k in range(NC) if k not in active]] = -1e4
+                s.register_buffer('cmask', cm.view(1, NC, 1, 1, 1))
         def forward(s, x):
             h = s.inp(s.emb(x).permute(0, 4, 1, 2, 3))
             for d in s.down: h = d(h)
             h = s.from_code(s.to_code(h))
             for u in s.up: h = u(h)
-            return s.out(h)
+            o = s.out(h)
+            return o + s.cmask.to(o.dtype) if hasattr(s, 'cmask') else o
     return AE()
 
 def surface_mm(a, b, mm):
@@ -133,9 +138,9 @@ if __name__ == '__main__':
             return u, wgt
         def shape_loss(lg, y):
             u, wgt = shape_targets(y)                                                          # classes never present are held at 'outside' together, as one class's share
-            err = ((torch.tanh(lg[:, act]) - u).abs().sum(1, keepdim=True) + (torch.tanh(lg[:, inact]) + 1).mean(1, keepdim=True)) / (len(active) + 1)
-            return (err * wgt).sum() / wgt.sum().clamp(min=1) + 0.1 * ce(lg, y)
-        net = make_ae(NC, F, C, norm='chan' if SHAPE else 'group').to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
+            err = (torch.tanh(lg[:, act]) - u).abs().mean(1, keepdim=True)
+            return (err * wgt).sum() / wgt.sum().clamp(min=1) + ce(lg, y)                     # class term at full weight: the split is learned as fast as before; the shape term places the surfaces
+        net = make_ae(NC, F, C, norm='chan' if SHAPE else 'group', active=active if SHAPE else None).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
         scaler = torch.amp.GradScaler(enabled=AMP == torch.float16); ce = nn.CrossEntropyLoss(weight=wts, ignore_index=NC)
         def lossf(lg, y, who=None):
             """weighted cross-entropy; with MARGINAL, a plain-tissue voxel (classes 1-6) of a head whose source never draws classes M

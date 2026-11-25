@@ -56,7 +56,8 @@ def encode(ae, L, NC, F):
 def decode(ae, z):
     h = ae.from_code(z)
     for u in ae.up: h = u(h)
-    return ae.out(h)
+    o = ae.out(h)
+    return o + ae.cmask.to(o.dtype) if hasattr(ae, 'cmask') else o
 
 class Part:
     """one person's part: tokens inside the body, their features, codes and labels."""
