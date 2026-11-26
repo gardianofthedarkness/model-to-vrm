@@ -76,8 +76,9 @@ if __name__ == '__main__':
         case, p = cp; q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, '%s/%s_seg.npz' % (W, case)], capture_output=True, text=True, timeout=1800)
         return case, None if q.returncode == 0 else ('out of memory (killed)' if q.returncode in (-9, 137) else 'exit %d: %s' % (q.returncode, q.stderr.strip()[-200:]))
     index, failed = {}, {}
+    first = [seg(cases[0])] if cases else []                                                      # the first CT alone: it downloads the model weights once (parallel downloads collide)
     with ThreadPoolExecutor(PAR) as ex:
-        for case, err in ex.map(seg, cases):
+        for case, err in first + list(ex.map(seg, cases[1:])):
             if err: failed[case] = err; log(case, 'failed', err); continue
             try:
                 m, why = build(case, '%s/%s.mha' % (W, case), '%s/%s_seg.npz' % (W, case), ids, lo, hi, inv)

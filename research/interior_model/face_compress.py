@@ -87,7 +87,7 @@ if __name__ == '__main__':
         D = os.path.join(root, 'face_v1_headframe'); idx = json.load(open(os.path.join(D, 'index.json'))); ids = idx['ids']; heads = idx['heads']
         hs = sorted(c for c, v in heads.items() if v['source'] == 'hanseg')
         split = {c: ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train') for i, c in enumerate(hs)}
-        split.update({c: v['split'] for c, v in heads.items() if v['source'] == 'ts'})
+        split.update({c: v['split'] for c, v in heads.items() if v['source'] != 'hanseg'})
     else:                                                                       # pelvis part: 3 mm labels, 12 mm tokens (F=4)
         D = os.path.join(root, 'pelvis_v1'); idx = json.load(open(os.path.join(D, 'index.json'))); ids = {n: i for i, n in enumerate(idx['classes'])}; heads = idx['people']
         split = {c: v['split'] for c, v in heads.items()}

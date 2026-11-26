@@ -93,7 +93,7 @@ if __name__ == '__main__':
     C = next(iter(aes.values()))[2]; MM = {'face': 1.0, 'pelvis': 3.0}; FOLD = {'face': 'face_v1_headframe', 'pelvis': 'pelvis_v1'}
     hs = sorted(c for c, v in fidx['heads'].items() if v['source'] == 'hanseg')                              # split exactly as versions 1 and 2
     split = {c: ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train') for i, c in enumerate(hs)}
-    split.update({c: v['split'] for c, v in fidx['heads'].items() if v['source'] == 'ts'}); split.update({c: v['split'] for c, v in pidx['people'].items()})
+    split.update({c: v['split'] for c, v in fidx['heads'].items() if v['source'] != 'hanseg'}); split.update({c: v['split'] for c, v in pidx['people'].items()})
     members = {'face': fidx['heads'], 'pelvis': pidx['people']}
 
     # ---- people from the preparation cache (training needs no labels)

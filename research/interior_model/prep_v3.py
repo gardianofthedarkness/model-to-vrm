@@ -54,7 +54,7 @@ if __name__ == '__main__':
     SH = [int(x) for x in os.environ.get('SHARD', '0/1').split('/')]; rng = np.random.default_rng(1000 + SH[0])
     fi = json.load(open(os.path.join(root, 'face_v1_headframe', 'index.json'))); pi = json.load(open(os.path.join(root, 'pelvis_v1', 'index.json')))
     hs = sorted(c for c, v in fi['heads'].items() if v['source'] == 'hanseg'); split = {c: ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train') for i, c in enumerate(hs)}
-    split.update({c: v['split'] for c, v in fi['heads'].items() if v['source'] == 'ts'}); split.update({c: v['split'] for c, v in pi['people'].items()})
+    split.update({c: v['split'] for c, v in fi['heads'].items() if v['source'] != 'hanseg'}); split.update({c: v['split'] for c, v in pi['people'].items()})
     ids = fi['ids']; swap = np.arange(256, dtype=np.uint8)
     for n, k in ids.items():
         m = SIDE.match(n)

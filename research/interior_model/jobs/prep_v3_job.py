@@ -13,6 +13,11 @@ os.makedirs('code', exist_ok=True)
 for f in ('face_compress.py', 'transformer_smoke.py', 'transformer_v2.py', 'shell_align.py', 'prep_v3.py', 'tissue_map.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 for r in ('gardianofthedarkness/hanseg-ct-mr', repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
+if os.environ.get('EXTRA_HEADS'):                                                                # extra heads (e.g. SynthRAD, tissue types only), merged into the head index
+    import json as _j
+    snapshot_download(os.environ['EXTRA_HEADS'], repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
+    _f = os.path.join(ROOT, 'face_v1_headframe'); _i = _j.load(open(os.path.join(_f, 'index.json'))); _x = _j.load(open(os.path.join(_f, 'index_synthrad.json')))['heads']
+    _i['heads'].update(_x); _j.dump(_i, open(os.path.join(_f, 'index.json'), 'w')); print('extra heads merged', len(_x), flush=True)
 snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*', 'm16_full/face_compress_v3/autoencoder_*.pt', 'm16_full/%s/autoencoder_*.pt' % os.environ.get('FACE_AE', 'face_compress_v3/x').split('/')[0], 'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/align/*', 'm16_full/covers/*'])
 for d in ('face_compress_v3', os.environ.get('FACE_AE', 'face_compress_v3/x').split('/')[0], 'pelvis_compress', 'align', 'covers'): shutil.copytree(os.path.join(ROOT, 'm16_full', d), os.path.join(ROOT, d), dirs_exist_ok=True)
 try: ram = int(open('/sys/fs/cgroup/memory.max').read()) / 1e9

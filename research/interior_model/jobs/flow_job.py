@@ -16,6 +16,11 @@ code = 'code'; os.makedirs(code, exist_ok=True)
 for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join(code, f))
 for r in (HS, repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*' if 'face' in parts and os.environ.get('PREP', 'prep_v2').startswith('prep_v2') else 'face_v1_headframe/index.json'], local_dir=ROOT, max_workers=16)
+if os.environ.get('EXTRA_HEADS'):                                                                # extra heads (e.g. SynthRAD, tissue types only), merged into the head index
+    import json as _j
+    snapshot_download(os.environ['EXTRA_HEADS'], repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
+    _f = os.path.join(ROOT, 'face_v1_headframe'); _i = _j.load(open(os.path.join(_f, 'index.json'))); _x = _j.load(open(os.path.join(_f, 'index_synthrad.json')))['heads']
+    _i['heads'].update(_x); _j.dump(_i, open(os.path.join(_f, 'index.json'), 'w')); print('extra heads merged', len(_x), flush=True)
 PREP = os.environ.get('PREP', 'prep_v2_TF%s' % TF); FAE = os.environ.get('FACE_AE_DIR', 'face_compress')                    # PREP=prep_v3_TF8 FACE_AE_DIR=face_compress_v3 for the v3 data
 snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['pelvis_v1/*' if 'pelvis' in parts and PREP.startswith('prep_v2') else 'pelvis_v1/index.json', 'm16_full/%s/autoencoder_*.pt' % FAE,
                   'm16_full/pelvis_compress/autoencoder_*.pt', 'm16_full/%s/last.pt' % OUT, 'm16_full/%s/flow_f1.pt' % OUT, 'm16_full/align/prep_v3_exclude.json'] + ['m16_full/%s/*_%s.npz' % (PREP, p) for p in parts])

@@ -12,6 +12,11 @@ api = HfApi(); repo = sys.argv[1]; ROOT = '/data/interior'; os.makedirs(ROOT, ex
 os.makedirs('code', exist_ok=True)
 for f in ('face_compress.py', 'tissue_map.py'): urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 for r in ('gardianofthedarkness/hanseg-ct-mr', repo): snapshot_download(r, repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
+if os.environ.get('EXTRA_HEADS'):                                                                # extra heads (e.g. SynthRAD, tissue types only), merged into the head index
+    import json as _j
+    snapshot_download(os.environ['EXTRA_HEADS'], repo_type='dataset', allow_patterns=['face_v1_headframe/*'], local_dir=ROOT, max_workers=16)
+    _f = os.path.join(ROOT, 'face_v1_headframe'); _i = _j.load(open(os.path.join(_f, 'index.json'))); _x = _j.load(open(os.path.join(_f, 'index_synthrad.json')))['heads']
+    _i['heads'].update(_x); _j.dump(_i, open(os.path.join(_f, 'index.json'), 'w')); print('extra heads merged', len(_x), flush=True)
 log('data ready', len(os.listdir(os.path.join(ROOT, 'face_v1_headframe'))), 'files')
 p = subprocess.Popen([sys.executable, '-u', 'face_compress.py', ROOT, os.environ.get('AE_STEPS', '12000'), os.environ.get('VARIANTS', 't8')], cwd='code', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); lines = []
 for l in p.stdout: lines.append(l); print(l.rstrip()[:1500], flush=True)
