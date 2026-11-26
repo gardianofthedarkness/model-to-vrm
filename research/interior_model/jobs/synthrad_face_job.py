@@ -12,12 +12,14 @@ Per CT (read straight from the private copy of the training archive):
      of face_v1_headframe (index.json), outside the scan = unknown (255).
 Output: <repo>/face_v1_headframe/<case>.npz and index_synthrad.json (heads marked tissue_only; split by index: every tenth
 test, the next tenth validation). Numbers only leave as JSON. env: LIMIT, PAR (CTs at once, default 3), TOTALSEG_LICENSE.
-args: <synthrad repo> <repo holding face_v1_headframe/index.json>"""
+SOURCE=pddca reads PDDCA (raw/data-part001.zip, Images/*.nii.gz) instead; output index_<source>.json.
+args: <synthrad or pddca repo> <repo holding face_v1_headframe/index.json>"""
 import os, sys, json, time, zipfile, subprocess, numpy as np
 from concurrent.futures import ThreadPoolExecutor
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 W = '/data/w'
+SRC = os.environ.get('SOURCE', 'synthrad')                                                     # synthrad | pddca
 
 def worker(case, ctp, outp):
     """one CT: segmentation (GPU) in this separate process"""
@@ -53,7 +55,7 @@ def build(case, ctp, segp, ids, lo, hi, inv):
     Lf = map_coordinates(L, idx.T, order=0, mode='constant', cval=255).reshape(shape).astype(np.uint8)
     np.savez_compressed('%s/out/%s.npz' % (W, case), labels=Lf)
     known = [0, 1, 2, 3, 4, 5, ids['eye_left'], ids['brain']]
-    return dict(source='synthrad', tissue_only=True, native_mm=[round(float(s), 3) for s in im.GetSpacing()], known=known, origin_mm=o.round(3).tolist(), axes=R.round(5).tolist(),
+    return dict(source=SRC, tissue_only=True, native_mm=[round(float(s), 3) for s in im.GetSpacing()], known=known, origin_mm=o.round(3).tolist(), axes=R.round(5).tolist(),
                 body_voxels_1mm=int(((Lf > 0) & (Lf < 255)).sum()), outside_scan_share=round(float((Lf == 255).mean()), 3), eye_ml=round(float((Lf == ids['eye_left']).sum()) / 1000, 1)), None
 
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == '--one': worker(sys.argv[2], sys.argv[3], sys.argv[4]); sys.exit(0)
@@ -65,15 +67,20 @@ if __name__ == '__main__':
     if key: r = subprocess.run(['totalseg_set_license', '-l', key], capture_output=True, text=True); log('licence set:', r.returncode == 0)
     fi = json.load(open(hf_hub_download(frepo, 'face_v1_headframe/index.json', repo_type='dataset'))); ids = fi['ids']; lo, hi = np.array(fi['window_lo_mm']), np.array(fi['window_hi_mm'])
     inv = {v: int(k) for k, v in class_map['head_glands_cavities'].items()}; log('window', lo.tolist(), hi.tolist(), 'model classes', sorted(inv))
-    Z = zipfile.ZipFile(hf_hub_download(repo, 'raw/14918214/synthRAD2025_Task1_Train.zip', repo_type='dataset', local_dir='/data/sr'))
-    cts = sorted(n for n in Z.namelist() if n.endswith('/ct.mha') and '/HN/' in n)
+    if SRC == 'pddca':
+        Z = zipfile.ZipFile(hf_hub_download(repo, 'raw/data-part001.zip', repo_type='dataset', local_dir='/data/sr')); cts = sorted(n for n in Z.namelist() if n.startswith('Images/') and n.endswith('.nii.gz'))
+    else:
+        Z = zipfile.ZipFile(hf_hub_download(repo, 'raw/14918214/synthRAD2025_Task1_Train.zip', repo_type='dataset', local_dir='/data/sr')); cts = sorted(n for n in Z.namelist() if n.endswith('/ct.mha') and '/HN/' in n)
     if LIMIT: cts = cts[:: max(1, len(cts) // LIMIT)][:LIMIT]
     os.makedirs(W + '/out', exist_ok=True); log(len(cts), 'head-and-neck CTs,', PAR, 'at a time')
-    cases = [('sr_' + n.rsplit('/', 2)[-2], n) for n in cts]                                     # each CT is unpacked just before its turn and deleted after (memory)
+    cases = [('pd_' + os.path.basename(n)[:-7], n) if SRC == 'pddca' else ('sr_' + n.rsplit('/', 2)[-2], n) for n in cts]                                     # each CT is unpacked just before its turn and deleted after (memory)
     import threading; zlock = threading.Lock()
     def unpack(case, n):
         import SimpleITK as sitk
         m = '%s/%s.mha' % (W, case)
+        if n.endswith('.nii.gz'):
+            with zlock: open('%s/%s.nii.gz' % (W, case), 'wb').write(Z.read(n))
+            return '%s/%s.nii.gz' % (W, case)
         with zlock: open(m, 'wb').write(Z.read(n))
         p = '%s/%s.nii.gz' % (W, case); sitk.WriteImage(sitk.ReadImage(m), p); os.remove(m); return p   # TotalSegmentator reads NIfTI, not .mha
     index, failed = {}, {}; ilock = threading.Lock()
@@ -95,11 +102,11 @@ if __name__ == '__main__':
     if cases: one_case(cases[0])                                                                  # the first CT alone: it downloads the model weights once
     with ThreadPoolExecutor(PAR) as ex: list(ex.map(one_case, cases[1:]))
     for i, c in enumerate(sorted(index)): index[c]['split'] = 'test' if i % 10 == 0 else 'val' if i % 10 == 1 else 'train'
-    json.dump(dict(heads=index, failed=failed), open('%s/out/index_synthrad.json' % W, 'w'), indent=1)
+    json.dump(dict(heads=index, failed=failed), open('%s/out/index_%s.json' % (W, SRC), 'w'), indent=1)
     log('SUMMARY', json.dumps(dict(cts=len(cts), done=len(index), failed=len(failed), eye_ml_median=float(np.median([m['eye_ml'] for m in index.values()])) if index else None,
                                     outside_scan_median=float(np.median([m['outside_scan_share'] for m in index.values()])) if index else None)))
     dest = 'face_v1_headframe' + ('_smoke' if LIMIT else '')
     for a in range(5):
-        try: api.upload_folder(folder_path=W + '/out', path_in_repo=dest, repo_id=repo, repo_type='dataset', commit_message='SynthRAD heads in head frame (tissue types)'); break
+        try: api.upload_folder(folder_path=W + '/out', path_in_repo=dest, repo_id=repo, repo_type='dataset', commit_message=SRC + ' heads in head frame (tissue types)'); break
         except Exception as e: log('upload retry', a, type(e).__name__); time.sleep(60)
     log('SUMMARY done')
