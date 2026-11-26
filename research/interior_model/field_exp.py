@@ -10,6 +10,9 @@ import os, sys, json, time, numpy as np, torch, torch.nn as nn, torch.nn.functio
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import ChanNorm
 NC = 7; NAMES = ['outside', 'fat_under_skin', 'fat_other', 'lean', 'air', 'bone', 'eye']; UNK = 255
+# autocast type: bfloat16 where the card has it (Ampere and newer), else float16 with a gradient scaler (T4, user 2026-11-26)
+AMP = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8) else torch.float16
+def scaler(): return torch.amp.GradScaler('cuda', enabled=(AMP == torch.float16))
 def log(*a): print('TS %6.0fs' % (time.time() - T0), *a, flush=True)
 T0 = time.time()
 
@@ -62,11 +65,14 @@ def make_ae(F=8, C=8, w=32, soft=True):
     n = int(np.log2(F)); ch = [w * 2 ** i for i in range(n + 1)]
     class AE(nn.Module):
         def __init__(s):
-            super().__init__(); s.soft = soft; s.emb = None if soft else nn.Embedding(NC + 1, 16); s.inp = blk(NC if soft else 16, ch[0])
+            super().__init__(); s.soft = soft; s.emb = None if soft else nn.Embedding(NC + 1, 16)
+            s.mix = nn.Linear(NC, 16, bias=False) if (soft and os.environ.get('SOFT_IN') == 'emb') else None   # soft shares through a learned 16-d tissue embedding (as the hard input)
+            if s.mix is not None: nn.init.normal_(s.mix.weight)
+            s.inp = blk(16 if (s.mix is not None or not soft) else NC, ch[0])
             s.down = nn.ModuleList([blk(ch[i], ch[i + 1], 2) for i in range(n)]); s.to_code = nn.Conv3d(ch[n], C, 1); s.from_code = blk(C, ch[n])
             s.up = nn.ModuleList([nn.Sequential(nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False), blk(ch[i + 1], ch[i])) for i in reversed(range(n))]); s.out = nn.Conv3d(ch[0], NC, 1)
         def encode(s, x):
-            h = s.inp(x if s.soft else s.emb(x).permute(0, 4, 1, 2, 3))
+            h = s.inp((s.mix(x.movedim(1, -1)).movedim(-1, 1) if s.mix is not None else x) if s.soft else s.emb(x).permute(0, 4, 1, 2, 3))
             for d in s.down: h = d(h)
             return s.to_code(h)
         def decode(s, z):
@@ -109,14 +115,15 @@ if __name__ == '__main__':
         else: c = b['cls'].long(); tgt = F_.one_hot(c.clamp(max=NC - 1), NC).permute(0, 4, 1, 2, 3).float(); known = known * (c != UNK).float(); x = c.clamp(max=NC)
         return x, tgt, known
     val = [crop(sp['val'], 2) for _ in range(6)]; best = (1e9, None, 0); torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
+    sc = scaler()
     for it in range(steps):
         net.train(); b = crop(sp['train'], 2); x, tgt, known = batch_targets(b)
-        with torch.autocast('cuda', dtype=torch.bfloat16): lg = net(x)
-        loss = soft_ce(lg, tgt, known, w); opt.zero_grad(); loss.backward(); opt.step(); sched.step()
+        with torch.autocast('cuda', dtype=AMP): lg = net(x)
+        loss = soft_ce(lg, tgt, known, w); opt.zero_grad(); sc.scale(loss).backward(); sc.step(opt); sc.update(); sched.step()
         if it % max(1, steps // 20) == 0 or it == steps - 1:
             net.eval()
-            with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16): vl = float(np.mean([soft_ce(net(batch_targets(v)[0]), *batch_targets(v)[1:], w).item() for v in val]))
+            with torch.no_grad(), torch.autocast('cuda', dtype=AMP): vl = float(np.mean([soft_ce(net(batch_targets(v)[0]), *batch_targets(v)[1:], w).item() for v in val]))
             if vl < best[0]: best = (vl, {k: v.detach().clone() for k, v in net.state_dict().items()}, it)
             log('step', it, 'train %.4f val %.4f' % (loss.item(), vl))
     log(profile_line('ae_' + kind, t_tr, steps))
-    torch.save(dict(state_dict=best[1], kind=kind, F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])
+    torch.save(dict(state_dict=best[1], kind=kind, soft_in=os.environ.get('SOFT_IN'), F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])

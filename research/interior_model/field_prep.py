@@ -6,7 +6,7 @@ result tile-independent apart from the receptive field, so tiles overlap and kee
 Output <out>/<case>.npz: idx (int16), feat, pos, code (C, G) float16. args: <fields dir> <autoencoder .pt> <out dir>"""
 import os, sys, json, numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import load_head, hard_classes, shares, make_ae, NC, log, profile_line
+from field_exp import AMP, scaler, load_head, hard_classes, shares, make_ae, NC, log, profile_line
 import time; t_p = time.time(); torch.cuda.reset_peak_memory_stats(); nh = 0
 from transformer_smoke import sdf, tiles
 root, aef, out = sys.argv[1:4]; os.makedirs(out, exist_ok=True); dev = 'cuda'; F = 8
@@ -22,7 +22,7 @@ for case in sorted(idx['heads'])[SH[0]::SH[1]]:
         code = torch.zeros((8, *G), device=dev)
         for a, b, m in tiles(G, 8, 2):
             xs = x[(..., slice(a[0] * F, b[0] * F), slice(a[1] * F, b[1] * F), slice(a[2] * F, b[2] * F))]
-            with torch.autocast('cuda', dtype=torch.bfloat16): z = ae.encode(xs).float()[0]
+            with torch.autocast('cuda', dtype=AMP): z = ae.encode(xs).float()[0]
             code[:, a[0] + m[0]:b[0], a[1] + m[1]:b[1], a[2] + m[2]:b[2]] = z[:, m[0]:, m[1]:, m[2]:]
     body = (~outside[sl]) & (~h['unk'][sl]); S = np.where(outside[sl] | (h['unk'][sl] & (h['field'][sl] <= -500)), 0, 3).astype(np.uint8)   # unknown air-level voxels (SynthRAD's masked face) count as outside for the shell; unknown tissue (metal streaks) as body
     D = sdf(S, 1.0); known = (~h['unk'][sl]).astype(np.float32)

@@ -12,7 +12,7 @@ import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functiona
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
+from field_exp import AMP, scaler, load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
@@ -76,7 +76,7 @@ def shape_loss(P, Tt, K):
 def step_loss(c, t, gen):
     e = data[c]; z1 = T(e.z)[None]; z0 = torch.randn(z1.shape, device=dev, generator=gen); rev = torch.rand(z1.shape[:2], device=dev, generator=gen) < (0.3 if rng.random() < 0.5 else 0.0)
     zt = torch.where(rev[..., None], z1, (1 - t) * z0 + t * z1)
-    with torch.autocast('cuda', dtype=torch.bfloat16): v = net(zt, torch.tensor(float(t), device=dev), rev, **cond(e)).float()
+    with torch.autocast('cuda', dtype=AMP): v = net(zt, torch.tensor(float(t), device=dev), rev, **cond(e)).float()
     loss = ((v - (z1 - z0)) ** 2)[~rev].mean(); sl = None
     if SHAPE > 0:
         h = head(c); occ = np.zeros(e.G, bool); occ[tuple(e.idx.T)] = True; cand = np.argwhere(occ[:max(1, e.G[0] - 7), :max(1, e.G[1] - 7), :max(1, e.G[2] - 7)])
@@ -84,7 +84,7 @@ def step_loss(c, t, gen):
         z1h = (zt + (1 - t) * v)[0] * T(sd) + T(mu); grid = T(e.code[(slice(None),) + bx]).clone()
         inb = np.all((e.idx >= a) & (e.idx < b), 1); loc = e.idx[inb] - a
         g2 = grid.clone(); g2[:, loc[:, 0], loc[:, 1], loc[:, 2]] = z1h[T(np.flatnonzero(inb), torch.long)].T
-        with torch.autocast('cuda', dtype=torch.bfloat16): P = torch.softmax(ae.decode(g2[None]).float(), 1)
+        with torch.autocast('cuda', dtype=AMP): P = torch.softmax(ae.decode(g2[None]).float(), 1)
         vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
         Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
         sl = shape_loss(P, Tt, K)
@@ -92,10 +92,10 @@ def step_loss(c, t, gen):
             w = (loss.detach() / sl.detach().clamp(min=1e-6)) if AUTO else SHAPE   # auto (user, 2026-11-26): the shell part equals the flow loss at every step, no set weight
             loss = loss + w * sl
     return loss, (sl.item() if sl is not None else float('nan'))
-gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []; torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
+sc = scaler(); gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []; torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
 for it in range(STEPS):
     net.train(); c = sp['train'][rng.integers(len(sp['train']))]; t = float(rng.random())
-    loss, sl = step_loss(c, t, gen); opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step(); sched.step()
+    loss, sl = step_loss(c, t, gen); opt.zero_grad(); sc.scale(loss).backward(); sc.unscale_(opt); torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); sc.step(opt); sc.update(); sched.step()
     with torch.no_grad():
         for pe_, pn in zip(ema.parameters(), net.parameters()): pe_.mul_(0.999).add_(pn, alpha=0.001)
     if it % max(1, STEPS // 20) == 0 or it == STEPS - 1: log('step', it, 'loss %.4f shape %.4f' % (loss.item(), sl)); hist.append((it, loss.item(), sl))
@@ -106,13 +106,13 @@ torch.save(dict(state_dict=ema.state_dict(), mu=mu, sd=sd, shape='auto' if AUTO 
 def sample(e, steps=16, seed=0):
     g = torch.Generator(device=dev); g.manual_seed(seed); z = torch.randn((1, len(e.idx), C), device=dev, generator=g); rev = torch.zeros((1, len(e.idx)), dtype=torch.bool, device=dev); cd = cond(e)
     for i in range(steps):
-        with torch.autocast('cuda', dtype=torch.bfloat16): z = z + ema(z, torch.tensor(i / steps, device=dev), rev, **cd).float() / steps
+        with torch.autocast('cuda', dtype=AMP): z = z + ema(z, torch.tensor(i / steps, device=dev), rev, **cd).float() / steps
     return z[0].cpu().numpy() * sd + mu
 @torch.no_grad()
 def decode_probs(e, codes):
     grid = e.code.copy(); grid[(slice(None),) + tuple(e.idx.T)] = codes.T; P = np.zeros((NC, *[g * F for g in e.G]), np.float16)
     for a, b, m in tiles(e.G, 8, 2):
-        with torch.autocast('cuda', dtype=torch.bfloat16): pr = torch.softmax(ae.decode(T(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]])).float(), 1)[0].cpu().numpy()
+        with torch.autocast('cuda', dtype=AMP): pr = torch.softmax(ae.decode(T(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]])).float(), 1)[0].cpu().numpy()
         P[:, (a[0] + m[0]) * F:b[0] * F, (a[1] + m[1]) * F:b[1] * F, (a[2] + m[2]) * F:b[2] * F] = pr[:, m[0] * F:, m[1] * F:, m[2] * F:]
     return P
 def margin(Q, k):
