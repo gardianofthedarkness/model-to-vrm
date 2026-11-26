@@ -103,10 +103,13 @@ def decode_probs(e, codes):
         with torch.autocast('cuda', dtype=torch.bfloat16): pr = torch.softmax(ae.decode(T(grid[None, :, a[0]:b[0], a[1]:b[1], a[2]:b[2]])).float(), 1)[0].cpu().numpy()
         P[:, (a[0] + m[0]) * F:b[0] * F, (a[1] + m[1]) * F:b[1] * F, (a[2] + m[2]) * F:b[2] * F] = pr[:, m[0] * F:, m[1] * F:, m[2] * F:]
     return P
+def margin(Q, k):
+    """tissue k minus the strongest other tissue: its zero level is the boundary of the label map, at any confidence"""
+    o = np.delete(Q, k, axis=0).max(0); return Q[k].astype(np.float32) - o.astype(np.float32)
 def surf(vol):
     from skimage import measure
-    if vol.max() < 0.5 or vol.min() > 0.5: return np.zeros((0, 3))
-    v, f, _, _ = measure.marching_cubes(vol.astype(np.float32), 0.5); t_ = v[f]; ar = 0.5 * np.linalg.norm(np.cross(t_[:, 1] - t_[:, 0], t_[:, 2] - t_[:, 0]), axis=1)
+    if vol.max() < 0 or vol.min() > 0: return np.zeros((0, 3))
+    v, f, _, _ = measure.marching_cubes(vol.astype(np.float32), 0.0); t_ = v[f]; ar = 0.5 * np.linalg.norm(np.cross(t_[:, 1] - t_[:, 0], t_[:, 2] - t_[:, 0]), axis=1)
     r = np.random.default_rng(0); k = r.choice(len(f), 200000, p=ar / ar.sum()); u = r.random((200000, 2)); mm = u.sum(1) > 1; u[mm] = 1 - u[mm]
     return t_[k, 0] + u[:, :1] * (t_[k, 1] - t_[k, 0]) + u[:, 1:] * (t_[k, 2] - t_[k, 0])
 res = {}
@@ -117,7 +120,7 @@ for c in sp['test']:
     for k in range(1, NC):
         a_, b_ = (ap == k) & known, (at == k) & known
         if b_.sum() < 50: continue
-        sp_, st = surf(np.where(known, P[k].astype(np.float32), 0)), surf(np.where(known, Tt[k], 0))
+        sp_, st = surf(np.where(known, margin(P, k), -1.0)), surf(np.where(known, margin(Tt, k), -1.0))
         d = np.concatenate([cKDTree(st).query(sp_, workers=-1)[0], cKDTree(sp_).query(st, workers=-1)[0]]) if len(sp_) and len(st) else np.array([np.nan])
         npc = lambda m: int(sum(np.bincount(ndi.label(m)[0].ravel())[1:] >= 20))
         r[NAMES[k]] = dict(dice=round(float(2 * (a_ & b_).sum() / (a_.sum() + b_.sum())), 3), surface_median_mm=round(float(np.nanmedian(d)), 2), surface_p90_mm=round(float(np.nanpercentile(d, 90)), 2),
