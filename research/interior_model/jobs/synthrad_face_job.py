@@ -76,22 +76,24 @@ if __name__ == '__main__':
         m = '%s/%s.mha' % (W, case)
         with zlock: open(m, 'wb').write(Z.read(n))
         p = '%s/%s.nii.gz' % (W, case); sitk.WriteImage(sitk.ReadImage(m), p); os.remove(m); return p   # TotalSegmentator reads NIfTI, not .mha
-    def seg(cp):
-        case, n = cp; p = unpack(case, n); q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, '%s/%s_seg.npz' % (W, case)], capture_output=True, text=True, timeout=1800)
-        return case, None if q.returncode == 0 else ('out of memory (killed)' if q.returncode in (-9, 137) else 'exit %d: %s' % (q.returncode, q.stderr.strip()[-200:]))
-    index, failed = {}, {}
-    first = [seg(cases[0])] if cases else []                                                      # the first CT alone: it downloads the model weights once (parallel downloads collide)
-    with ThreadPoolExecutor(PAR) as ex:
-        for case, err in first + list(ex.map(seg, cases[1:])):
-            if err: failed[case] = err; log(case, 'failed', err); continue
-            try:
-                m, why = build(case, '%s/%s.nii.gz' % (W, case), '%s/%s_seg.npz' % (W, case), ids, lo, hi, inv)
-                if m is None: failed[case] = why
-                else: index[case] = m
-                log(case, m if m else why)
-            except Exception as e: failed[case] = '%s %s' % (type(e).__name__, str(e)[:150]); log(case, failed[case])
-            for f_ in ('%s/%s.nii.gz' % (W, case), '%s/%s_seg.npz' % (W, case)):
-                if os.path.exists(f_): os.remove(f_)
+    index, failed = {}, {}; ilock = threading.Lock()
+    def one_case(cp):
+        """unpack, segment (own process), build, log, delete: nothing waits for the other cases"""
+        case, n = cp
+        try:
+            p = unpack(case, n); sp_ = '%s/%s_seg.npz' % (W, case)
+            q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, sp_], capture_output=True, text=True, timeout=1800)
+            if q.returncode != 0: m, why = None, ('out of memory (killed)' if q.returncode in (-9, 137) else 'exit %d: %s' % (q.returncode, q.stderr.strip()[-200:]))
+            else: m, why = build(case, p, sp_, ids, lo, hi, inv)
+        except Exception as e: m, why = None, '%s %s' % (type(e).__name__, str(e)[:150])
+        for f_ in ('%s/%s.nii.gz' % (W, case), '%s/%s_seg.npz' % (W, case)):
+            if os.path.exists(f_): os.remove(f_)
+        with ilock:
+            if m is None: failed[case] = why
+            else: index[case] = m
+        log(case, m if m else why)
+    if cases: one_case(cases[0])                                                                  # the first CT alone: it downloads the model weights once
+    with ThreadPoolExecutor(PAR) as ex: list(ex.map(one_case, cases[1:]))
     for i, c in enumerate(sorted(index)): index[c]['split'] = 'test' if i % 10 == 0 else 'val' if i % 10 == 1 else 'train'
     json.dump(dict(heads=index, failed=failed), open('%s/out/index_synthrad.json' % W, 'w'), indent=1)
     log('SUMMARY', json.dumps(dict(cts=len(cts), done=len(index), failed=len(failed), eye_ml_median=float(np.median([m['eye_ml'] for m in index.values()])) if index else None,
