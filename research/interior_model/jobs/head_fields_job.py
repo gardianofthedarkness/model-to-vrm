@@ -10,14 +10,14 @@ head's existing head frame and the shared 1 mm window of face_v1_headframe. CPU.
           streak map above the noise far from the metal); bone-bright voxels found only in metal slices
   hard    the old labels for the same head (median filter, hard classes, nearest neighbour; eye 16; unknown 255): the baseline
 Tissue types are read from the field at use time: air < -500, fat -190..-30, lean -30..150, bone > 150.
-env: LIMIT, WORKERS, REDO (source to rebuild). Uploads every 10 heads (<case>.npz + <case>.json) and on restart skips heads already uploaded. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
+env: LIMIT, WORKERS, REDO (source to rebuild, or all), PDDCA_REPO (adds PDDCA heads). Uploads every 10 heads (<case>.npz + <case>.json) and on restart skips heads already uploaded. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
 import os, sys, json, time, zipfile, numpy as np
 from multiprocessing import Pool
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 G = {}
 def _init(g):
-    G.update(g); G['zh'] = zipfile.ZipFile(g['zh_path']); G['zs'] = zipfile.ZipFile(g['zs_path'])
+    G.update(g); G['zh'] = zipfile.ZipFile(g['zh_path']); G['zs'] = zipfile.ZipFile(g['zs_path']); G['zp'] = zipfile.ZipFile(g['zp_path']) if g.get('zp_path') else None
 
 def streak_unknown(A, body):
     """metal and its streaks on the CT's own grid (A indexed x, y, z)"""
@@ -52,6 +52,8 @@ def one(arg):
         W = '/tmp/hf_%s' % case; os.makedirs(W, exist_ok=True)
         if src == 'hanseg':
             Z = G['zh']; n = [x for x in Z.namelist() if x.endswith('%s/%s_IMG_CT.nrrd' % (case, case))][0]; p = W + '/ct.nrrd'
+        elif src == 'pddca':
+            Z = G['zp']; n = 'Images/%s.nii.gz' % case[3:]; p = W + '/ct.nii.gz'
         else:
             Z = G['zs']; n = G['sr_paths'][case]; p = W + '/ct.mha'
         open(p, 'wb').write(Z.read(n)); im = sitk.ReadImage(p); os.remove(p)
@@ -77,7 +79,7 @@ def one(arg):
             em = np.zeros(A.shape, np.float32); t = np.isin(T, [inv[k] for k in ('eye_left', 'eye_right', 'eye_lens_left', 'eye_lens_right')]); s = t.shape; em[off[0]:off[0] + s[0], off[1]:off[1] + s[1], off[2]:off[2] + s[2]] = t
             E = ndi.map_coordinates(em, idx, order=1, mode='constant', cval=0).reshape(shape)
         else:
-            E = (np.load(os.path.join(G['srh'], case + '.npz'))['labels'] == G['eye_id']).astype(np.float32)
+            E = (np.load(os.path.join(G['pdh'] if src == 'pddca' else G['srh'], case + '.npz'))['labels'] == G['eye_id']).astype(np.float32)
         H[E > 0.5] = G['eye_id']; H[U & ~inside] = 255; H[U] = 255
         bodyF = F > -500; airF = F < -500
         al, _ = ndi.label(airF | ~bodyF); outer = np.isin(al, np.unique(al[(~bodyF) & ~inside | (F <= -999)])) & (al > 0)
@@ -103,9 +105,15 @@ if __name__ == '__main__':
     inv = {v: int(k) for k, v in tasks['head_glands_cavities'].items()}
     srnames = zipfile.ZipFile(zs).namelist(); srp = {c: [n for n in srnames if n.endswith('/%s/ct.mha' % c[3:])][0] for c in srA}
     work = [(c, 'hanseg') for c in sorted(hsf)] + [(c, 'synthrad') for c in sorted(srA)]
+    PD = os.environ.get('PDDCA_REPO'); pdx, zp, pdh = {}, None, None                          # PDDCA heads (head frame from synthrad_face_job SOURCE=pddca)
+    if PD:
+        pdx = json.load(open(hf_hub_download(PD, 'face_v1_headframe/index_pddca.json', repo_type='dataset')))['heads']
+        zp = hf_hub_download(PD, 'raw/data-part001.zip', repo_type='dataset')
+        pdh = os.path.join(snapshot_download(PD, repo_type='dataset', allow_patterns=['face_v1_headframe/pd_*.npz'], local_dir='/data/pdh'), 'face_v1_headframe')
+        work += [(c, 'pddca') for c in sorted(pdx)]
     if LIMIT: work = work[:LIMIT // 2] + [w for w in work if w[1] == 'synthrad'][:LIMIT - LIMIT // 2]
     out = '/data/out'; os.makedirs(out, exist_ok=True)
-    g = dict(zh_path=zh, zs_path=zs, frames=dict(hsf, **srA), lo=lo, hi=hi, hv=hv, inv=inv, meta=meta, srh=srh, sr_paths=srp, eye_id=ids['eye_left'], out=out, fill_sources=os.environ.get('FILL_SOURCES', 'synthrad').split(','))
+    g = dict(zh_path=zh, zs_path=zs, frames=dict(hsf, **srA, **pdx), zp_path=zp, pdh=pdh, lo=lo, hi=hi, hv=hv, inv=inv, meta=meta, srh=srh, sr_paths=srp, eye_id=ids['eye_left'], out=out, fill_sources=os.environ.get('FILL_SOURCES', 'synthrad').split(','))
     try: ram = int(open('/sys/fs/cgroup/memory.max').read()) / 1e9
     except Exception: ram = 30
     nw = int(os.environ.get('WORKERS', max(1, min(os.cpu_count() or 4, int(ram // 8))))); log(len(work), 'heads,', nw, 'workers')
@@ -130,7 +138,7 @@ if __name__ == '__main__':
             if len(pend) >= 20: push(pend); [os.remove(os.path.join(out, f)) for f in pend]; pend = []
     if pend: push(pend); [os.remove(os.path.join(out, f)) for f in pend]
     ok = {c: r for c, r in stats.items() if isinstance(r, dict)}
-    for i, c in enumerate(sorted(ok)): ok[c]['split'] = fi['heads'][c].get('split') if c in fi['heads'] and fi['heads'][c].get('split') else srx.get(c, {}).get('split') or ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train')
+    for i, c in enumerate(sorted(ok)): ok[c]['split'] = fi['heads'][c].get('split') if c in fi['heads'] and fi['heads'][c].get('split') else srx.get(c, {}).get('split') or pdx.get(c, {}).get('split') or ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train')
     hs_sorted = sorted(c for c in ok if ok[c]['source'] == 'hanseg')
     for i, c in enumerate(hs_sorted): ok[c]['split'] = 'test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train'   # HaN-Seg split as in every earlier run
     json.dump(dict(window_lo_mm=lo.tolist(), window_hi_mm=hi.tolist(), voxel_mm=1.0, eye_id=ids['eye_left'], levels=dict(air=-500, fat=[-190, -30], lean=[-30, 150], bone=150),
