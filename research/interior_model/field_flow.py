@@ -12,7 +12,7 @@ import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functiona
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import AMP, scaler, load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
+from field_exp import AMP, scaler, cached_head, load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
@@ -32,20 +32,9 @@ for s, cs in sp.items():
 X = np.concatenate([data[c].raw for c in sp['train']]); mu, sd = X.mean(0), X.std(0)
 for e in data.values(): e.z = ((e.raw - mu) / sd).astype(np.float32)
 log({s: len(v) for s, v in sp.items()}, 'shape weight', SHAPE, 'seed', SEED, 'autoencoder', ck['kind'])
-heads = {}; HC = os.environ.get('HEADCACHE', '/data/hc'); KEYS = ('field', 'eye', 'subcut', 'unk', 'outside')
+heads = {}
 def head(c):
-    """full 1 mm head arrays, memory-mapped from a decompressed cache on disk shared by all runs on the card (RAM stays small
-    when several runs share one card); field float16, eye 0-255"""
-    if c not in heads:
-        d = os.path.join(HC, c)
-        if not os.path.exists(os.path.join(d, 'done')):
-            h = load_head(os.path.join(root, c + '.npz')); tmp = '%s.tmp%d' % (d, os.getpid()); os.makedirs(tmp, exist_ok=True)
-            arrs = dict(field=h['field'].astype(np.float16), eye=np.round(h['eye'] * 255).astype(np.uint8), subcut=h['subcut'], unk=h['unk'], outside=h['hard'] == 0)
-            for k in KEYS: np.save(os.path.join(tmp, k + '.npy'), arrs[k])
-            open(os.path.join(tmp, 'done'), 'w').close(); del h, arrs
-            try: os.rename(tmp, d)
-            except OSError: shutil.rmtree(tmp, ignore_errors=True)   # another run wrote it first
-        heads[c] = {k: np.load(os.path.join(d, k + '.npy'), mmap_mode='r') for k in KEYS}
+    if c not in heads: heads[c] = cached_head(root, c, idx['eye_id'])
     return heads[c]
 net = Flow(66 - 1, C, NC, 384, 8).to(dev); ema = Flow(66 - 1, C, NC, 384, 8).to(dev); ema.load_state_dict(net.state_dict()); ema.eval()
 for p in ema.parameters(): p.requires_grad_(False)

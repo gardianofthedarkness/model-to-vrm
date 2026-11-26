@@ -46,6 +46,22 @@ def hard_classes(hard, eye_id):
     for k, v in m.items(): out[hard == k] = v
     return out
 
+CACHE_KEYS = ('field', 'eye', 'subcut', 'unk', 'outside', 'cls')
+def cached_head(root, c, eye_id):
+    """a head's arrays memory-mapped from a decompressed cache on disk (HEADCACHE, default <fields>/../hc), written once and
+    shared by every process on the card, so RAM stays small however many runs share it. field float16, eye 0-255, cls the
+    old classes (hard_classes)."""
+    import shutil
+    d = os.path.join(os.environ.get('HEADCACHE') or os.path.join(os.path.dirname(os.path.abspath(root)), 'hc'), c)
+    if not os.path.exists(os.path.join(d, 'done')):
+        h = load_head(os.path.join(root, c + '.npz')); tmp = '%s.tmp%d' % (d, os.getpid()); os.makedirs(tmp, exist_ok=True)
+        arrs = dict(field=h['field'].astype(np.float16), eye=np.round(h['eye'] * 255).astype(np.uint8), subcut=h['subcut'], unk=h['unk'], outside=h['hard'] == 0, cls=hard_classes(h['hard'], eye_id))
+        for k in CACHE_KEYS: np.save(os.path.join(tmp, k + '.npy'), arrs[k])
+        open(os.path.join(tmp, 'done'), 'w').close(); del h, arrs
+        try: os.rename(tmp, d)
+        except OSError: shutil.rmtree(tmp, ignore_errors=True)   # another process wrote it first
+    return {k: np.load(os.path.join(d, k + '.npy'), mmap_mode='r') for k in CACHE_KEYS}
+
 def shares(field, eye, subcut, outside, up=2):
     """tissue shares per 1 mm voxel (torch, (B, X, Y, Z) inputs -> (B, 7, X, Y, Z)): the field is sampled `up` times finer
     by trilinear interpolation and each sample is classified at the HU levels; eye share and outside override"""
@@ -91,22 +107,18 @@ if __name__ == '__main__':
     idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx['eye_id']
     sp = splits(idx)
     log({s: len(v) for s, v in sp.items()}, kind)
-    H = {c: load_head(os.path.join(root, c + '.npz')) for c in sp['train'] + sp['val']}
-    for h in H.values():                                             # keep only what this kind needs, compactly (RAM: several runs share a card)
-        h['outside'] = h['hard'] == 0; h['cls'] = hard_classes(h['hard'], eye_id); del h['hard']
-        if kind == 'soft': h['field'] = h['field'].astype(np.float16); h['eye'] = np.round(h['eye'] * 255).astype(np.uint8); del h['cls']
-        else: del h['field'], h['eye'], h['subcut']
+    H = {c: cached_head(root, c, eye_id) for c in sp['train'] + sp['val']}                # memory-mapped, shared across processes
     KS = ('field', 'eye', 'subcut', 'outside', 'unk') if kind == 'soft' else ('outside', 'unk', 'cls')
     S = 64; rng = np.random.default_rng(0); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
     def crop(cs, n):
         out = {k: [] for k in KS}
         for _ in range(n):
-            c = cs[rng.integers(len(cs))]; h = H[c]; q = BI[c][rng.integers(len(BI[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, h['shape'])]
+            c = cs[rng.integers(len(cs))]; h = H[c]; q = BI[c][rng.integers(len(BI[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, h['field'].shape)]
             sl = tuple(slice(a, a + S) for a in o)
             for k in out: out[k].append(np.pad(h[k][sl], [(0, S - x) for x in h[k][sl].shape], constant_values={'field': -1000, 'eye': 0, 'subcut': 0, 'outside': 1, 'unk': 1, 'cls': UNK}[k]))
         return {k: torch.tensor(np.stack(v), device=dev) for k, v in out.items()}
     # class weights from training shares (rarer tissue, larger weight)
-    cnt = np.bincount(np.concatenate([hard_classes(load_head(os.path.join(root, c + '.npz'))['hard'][::4, ::4, ::4], eye_id).ravel() for c in sp['train']]), minlength=256)[:NC].astype(float); share = cnt / cnt.sum()
+    cnt = np.bincount(np.concatenate([np.asarray(H[c]['cls'][::4, ::4, ::4]).ravel() for c in sp['train']]), minlength=256)[:NC].astype(float); share = cnt / cnt.sum()
     w = torch.tensor(np.where(share > 0, share, share[share > 0].min()) ** -0.5, dtype=torch.float32, device=dev); w = w / w.mean(); log('class shares', np.round(share, 4).tolist())
     net = make_ae(soft=(kind == 'soft')).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     def batch_targets(b):
