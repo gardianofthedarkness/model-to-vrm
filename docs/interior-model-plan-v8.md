@@ -417,3 +417,17 @@ Complete full-face heads: 42 HaN-Seg + 61 TotalSegmentator + 85 SynthRAD = 188; 
 and airway read cleanly. Inside the brain the model paints bone and fat patches (IXI's brain-research contrast differs from
 the HaN-Seg radiotherapy MRIs). Fixes: brain mask from SynthStrip (FreeSurfer) set to the organ class; test and retrain
 the MRI model on SynthRAD's MRI-CT pairs (other scanners).
+
+### 14.5 Precision test: how much boundary accuracy the labelling loses (user idea, 2026-11-26)
+
+`research/interior_model/precision_test.py`, HaN-Seg heads 01, 03, 05 (0.56-0.68 mm in-plane, 2 mm slices), locally.
+A. Current CT tissue labels (median filter, hard per-voxel classes, 1 mm nearest) against the exact surface taken from the
+raw CT at its own resolution: fat|lean (-30 HU) 0.99-1.10 mm median, 1.73-1.92 mm 90th percentile; bone (150 HU)
+0.89-0.98 / 1.57-1.74 mm. Most of it comes from the 2 mm slices and the hard classes, little from the 1 mm resampling.
+B. Named regions against the expert outlines: TotalSegmentator eyes 0.84-1.0 mm median (90th 1.0-1.5), mandible 0.63-0.84
+(1.0-1.2): about the size of expert disagreement. Snapping to image edges (random walker in a band around the label) made
+eyes worse (90th 2.7-3.9 mm, volume 11-13 ml against 8.5: leaks into the eyelids, which have no edge on CT) and shrank the
+mandible (spongy bone lost).
+Decision: identity from the labelling models; tissue boundaries from the raw CT as continuous fields (signed distance per
+tissue at the CT's own resolution, carried into the head frame by interpolation, not by nearest labels). Target: tissue
+surfaces under 0.5 mm. Edge snapping only where a real edge exists; not now.
