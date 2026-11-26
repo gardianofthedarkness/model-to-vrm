@@ -71,7 +71,9 @@ if __name__ == '__main__':
     os.makedirs(W + '/out', exist_ok=True); log(len(cts), 'head-and-neck CTs,', PAR, 'at a time')
     cases = []
     for n in cts:
-        case = 'sr_' + n.rsplit('/', 2)[-2]; p = '%s/%s.mha' % (W, case); open(p, 'wb').write(Z.read(n)); cases.append((case, p))
+        import SimpleITK as sitk
+        case = 'sr_' + n.rsplit('/', 2)[-2]; m = '%s/%s.mha' % (W, case); open(m, 'wb').write(Z.read(n))
+        p = '%s/%s.nii.gz' % (W, case); sitk.WriteImage(sitk.ReadImage(m), p); os.remove(m); cases.append((case, p))   # TotalSegmentator reads NIfTI, not .mha
     def seg(cp):
         case, p = cp; q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, '%s/%s_seg.npz' % (W, case)], capture_output=True, text=True, timeout=1800)
         return case, None if q.returncode == 0 else ('out of memory (killed)' if q.returncode in (-9, 137) else 'exit %d: %s' % (q.returncode, q.stderr.strip()[-200:]))
@@ -81,7 +83,7 @@ if __name__ == '__main__':
         for case, err in first + list(ex.map(seg, cases[1:])):
             if err: failed[case] = err; log(case, 'failed', err); continue
             try:
-                m, why = build(case, '%s/%s.mha' % (W, case), '%s/%s_seg.npz' % (W, case), ids, lo, hi, inv)
+                m, why = build(case, '%s/%s.nii.gz' % (W, case), '%s/%s_seg.npz' % (W, case), ids, lo, hi, inv)
                 if m is None: failed[case] = why
                 else: index[case] = m
                 log(case, m if m else why)
