@@ -401,3 +401,8 @@ frames). Score: disagreement in the overlap (bone positions, fat thickness, musc
 Test 1, first run (42 HaN-Seg pairs, 5 folds, face and neck region): jaw bone 0.81 (1.5 mm), lean 0.84, air 0.70, all bone
 0.69, fat under the skin 0.65, thin fat 0, eyes 0. Rerun v2 with crops centred on eyes and thin fat and class weights.
 Noise between identical 10,000-step runs: about 0.01-0.02 on the face medians (arm B repeated).
+
+**Test 1 answer (MRI run v2: a share of crops centred on eyes and thin fat, class weights by rarity; 42 pairs, 5 folds):**
+eyes 0.79 (against expert outlines 0.77), jaw bone 0.81, air 0.74, all bone 0.72, lean 0.83, fat under the skin 0.68,
+thin fat 0.16; surfaces 1.5-2.1 mm. MRI aligns with CT for every priority part. The model trained on all 42 pairs is
+saved as hanseg-ct-mr/mri_tissue_v2/segresnet_all.pt for IXI. IXI comes from other scanners: check a sample first.
