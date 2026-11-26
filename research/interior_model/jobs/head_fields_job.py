@@ -6,7 +6,7 @@ head's existing head frame and the shared 1 mm window of face_v1_headframe. CPU.
   field   raw CT brightness interpolated (linear) into the frame, HU, float16; outside the body -1000
   eye     eyes and lenses as a fraction 0-255 (HaN-Seg: labelling model's masks interpolated; SynthRAD: its head-frame eye label)
   subcut  fat connected to the outside (fat under the skin), packed bits, from the 1 mm field
-  unk     unknown, packed bits: outside the scan; never-measured fill (exactly the scan minimum, opened 3^3: SynthRAD's defacing wedge); dental metal (saturated voxels) and its streaks (projection-interpolation
+  unk     unknown, packed bits: outside the scan; never-measured fill (SynthRAD only: exactly the scan minimum, opened 3^3: its defacing wedge); dental metal (saturated voxels) and its streaks (projection-interpolation
           streak map above the noise far from the metal); bone-bright voxels found only in metal slices
   hard    the old labels for the same head (median filter, hard classes, nearest neighbour; eye 16; unknown 255): the baseline
 Tissue types are read from the field at use time: air < -500, fat -190..-30, lean -30..150, bone > 150.
@@ -58,7 +58,9 @@ def one(arg):
         A = sitk.GetArrayFromImage(im).transpose(2, 1, 0).astype(np.float32); sp = np.array(im.GetSpacing()); D = np.array(im.GetDirection()).reshape(3, 3); org = np.array(im.GetOrigin())
         body = ndi.binary_fill_holes(ndi.median_filter(A, 3) > -500)
         unk, nmetal = streak_unknown(A, body)
-        fill = ndi.binary_opening(A <= A.min(), np.ones((3, 3, 3), bool))   # never measured: defacing wedge / outside the field of view, set to exactly the scan minimum
+        # never measured: SynthRAD's defacing wedge and field-of-view padding are set to exactly the scan minimum, while its real
+        # air is noisy around -1000 (checked 2026-11-26). Not for HaN-Seg: its scanner clamps real air to the minimum too.
+        fill = ndi.binary_opening(A <= A.min(), np.ones((3, 3, 3), bool)) if src in G['fill_sources'] else np.zeros(A.shape, bool)
         unk |= fill
         # old-style hard labels on the CT grid (as face_set_job.basic_labels)
         S = ndi.median_filter(A, 3); L = np.zeros(A.shape, np.uint8); fat = body & (S >= -190) & (S <= -30); fl, _ = ndi.label(fat | ~body); oid = np.bincount(fl[~body].ravel()).argmax()
@@ -103,7 +105,7 @@ if __name__ == '__main__':
     work = [(c, 'hanseg') for c in sorted(hsf)] + [(c, 'synthrad') for c in sorted(srA)]
     if LIMIT: work = work[:LIMIT // 2] + [w for w in work if w[1] == 'synthrad'][:LIMIT - LIMIT // 2]
     out = '/data/out'; os.makedirs(out, exist_ok=True)
-    g = dict(zh_path=zh, zs_path=zs, frames=dict(hsf, **srA), lo=lo, hi=hi, hv=hv, inv=inv, meta=meta, srh=srh, sr_paths=srp, eye_id=ids['eye_left'], out=out)
+    g = dict(zh_path=zh, zs_path=zs, frames=dict(hsf, **srA), lo=lo, hi=hi, hv=hv, inv=inv, meta=meta, srh=srh, sr_paths=srp, eye_id=ids['eye_left'], out=out, fill_sources=os.environ.get('FILL_SOURCES', 'synthrad').split(','))
     try: ram = int(open('/sys/fs/cgroup/memory.max').read()) / 1e9
     except Exception: ram = 30
     nw = int(os.environ.get('WORKERS', max(1, min(os.cpu_count() or 4, int(ram // 8))))); log(len(work), 'heads,', nw, 'workers')
