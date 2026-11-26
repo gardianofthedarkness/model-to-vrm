@@ -389,3 +389,15 @@ PET/CT (IDC FDG and PSMA collections, skull base to thigh), a trunk window overl
 generated (a) independently and (b) with the pelvis overlap revealed (partial reveal, section 4.3, resampled between
 frames). Score: disagreement in the overlap (bone positions, fat thickness, muscle edges). Needs a trunk part first
 (v7 milestones Context 17, Trunk 18, Seams 19). Runs after the current tests.
+
+### 14.4 Head data census results (2026-11-25)
+
+| Source (private copy) | Heads | Jaw whole | Face intact | MRI pair | Use |
+|---|---|---|---|---|---|
+| CQ500 (cq500-ct, 41 GB, CC BY-NC-SA) | 491 | 0 of 20 sampled; covers about the top 148 mm | yes | no | upper head only, and only after the coverage fact removes the harm of test 2 |
+| SynthRAD2025 head-and-neck (synthrad2025, Zenodo record 14918214, centres A, B, C, E, CC BY-NC 4.0; centre D's restricted licence does not apply) | 156 | 20 of 20 sampled; upper teeth 18, skull whole 20; about 250 mm covered | yes (nose median 27 mm ahead, 19 of 20 above 10 mm) | 20 of 20 | full heads (CT) and MRI-CT pairs for test 1 |
+| IXI (ixi-t1-t2) | 581 MRI | chin at the edge | yes | MRI only | full faces once MRI-to-tissue works (test 1) |
+
+Test 1, first run (42 HaN-Seg pairs, 5 folds, face and neck region): jaw bone 0.81 (1.5 mm), lean 0.84, air 0.70, all bone
+0.69, fat under the skin 0.65, thin fat 0, eyes 0. Rerun v2 with crops centred on eyes and thin fat and class weights.
+Noise between identical 10,000-step runs: about 0.01-0.02 on the face medians (arm B repeated).
