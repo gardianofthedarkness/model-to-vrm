@@ -8,7 +8,7 @@ tagging, shell loss, masked partial faces). Stages, each as parallel processes o
   3. flows (ARMS): A0 hard; N soft; NS soft + shell loss; NSP soft + shell loss + SynthRAD's masked-face heads
 Test heads are full faces only (HaN-Seg and PDDCA test splits). nvidia-smi and free memory are logged every GPU_LOG s.
 Uploads <repo>/field_exp/<SUITE>/... after each stage.
-env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS.
+env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once).
 args: <repo>"""
 import os, sys, time, json, subprocess, threading, urllib.request
 from huggingface_hub import HfApi, snapshot_download
@@ -46,7 +46,10 @@ def parallel(jobs):
         p = subprocess.Popen(cmd, cwd='code', env=dict(os.environ, **env), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True); lines = []
         for l in p.stdout: lines.append(l); print('[%s] %s' % (name, l.rstrip()[:1500]), flush=True)
         p.wait(); res[name] = (p.returncode, ''.join(lines)); log('exit', name, p.returncode)
-    th = [threading.Thread(target=one, args=j) for j in jobs]
+    sem = threading.Semaphore(int(os.environ.get('MAXPAR', '99')))                     # at most MAXPAR processes on the card at once
+    def gated(*j):
+        with sem: one(*j)
+    th = [threading.Thread(target=gated, args=j) for j in jobs]
     for t in th: t.start()
     for t in th: t.join()
     return res
@@ -56,13 +59,21 @@ def up(folder, path):
         except Exception as e: log('upload retry', a, type(e).__name__); time.sleep(60)
 kinds = sorted({'hard' if a == 'A0' else 'soft' for a in ARMS})
 py = [sys.executable, '-u']
+REUSE = os.environ.get('REUSE')                                                        # an earlier suite: take its autoencoders and preparation, run flows only
+if REUSE:
+    snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['field_exp/%s/ae_*/*' % REUSE, 'field_exp/%s/prep_*/*' % REUSE])
+    src = os.path.join(ROOT, 'field_exp', REUSE)
+    for d in os.listdir(src):
+        if d.startswith(('ae_', 'prep_')): os.symlink(os.path.join(src, d), os.path.join(out, d))
+    log('reusing autoencoders and preparation of', REUSE, sorted(os.listdir(out)))
 # 1. autoencoders
-r = parallel([('ae_' + k, py + ['field_exp.py', fields, AE_STEPS, k, os.path.join(out, 'ae_' + k)], {}) for k in kinds])
-for k in kinds: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
-up(out, 'field_exp/' + SUITE); log('stage autoencoders done')
+if not REUSE: r = parallel([('ae_' + k, py + ['field_exp.py', fields, AE_STEPS, k, os.path.join(out, 'ae_' + k)], {}) for k in kinds])
+if not REUSE:
+    for k in kinds: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
+    up(out, 'field_exp/' + SUITE); log('stage autoencoders done')
 # 2. preparation (all heads, both kinds, SHARDS processes each)
-r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
-log('stage preparation done', {k: v[0] for k, v in r.items()})
+if not REUSE: r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
+if not REUSE: log('stage preparation done', {k: v[0] for k, v in r.items()})
 # 3. flows
 arm_env = dict(A0=('hard', '0', 'hanseg,pddca'), N=('soft', '0', 'hanseg,pddca'), NS=('soft', SHAPE, 'hanseg,pddca'), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad'))
 jobs = []
@@ -78,4 +89,8 @@ for n in r:
     f = os.path.join(out, n, 'field_flow.json')
     if os.path.exists(f): summ[n] = json.load(open(f))['summary']
 json.dump(summ, open(os.path.join(out, 'summary.json'), 'w'), indent=1); log('SUMMARY', json.dumps(summ))
-stop = True; up(out, 'field_exp/' + SUITE); log('SUMMARY done')
+stop = True
+if REUSE:
+    for d in os.listdir(out):
+        if os.path.islink(os.path.join(out, d)): os.unlink(os.path.join(out, d))   # reused parts stay where they are
+up(out, 'field_exp/' + SUITE); log('SUMMARY done')
