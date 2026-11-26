@@ -6,7 +6,7 @@ the shell/topology loss. Shared pieces for the three arms:
 Seven classes: 0 outside, 1 fat under the skin, 2 other fat, 3 lean, 4 air, 5 bone, 6 eye. Unknown voxels: ignored.
 This module: loading a head, tissue shares from the field (sub-voxel sampling), the autoencoder (tile-independent channel
 norm, soft or class input), and its training. CLI: train an autoencoder.  args: <fields dir> <steps> <hard|soft> <out dir>"""
-import os, sys, json, time, numpy as np, torch, torch.nn as nn, torch.nn.functional as F_
+import os, sys, json, time, math, numpy as np, torch, torch.nn as nn, torch.nn.functional as F_
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import ChanNorm
 NC = 7; NAMES = ['outside', 'fat_under_skin', 'fat_other', 'lean', 'air', 'bone', 'eye']; UNK = 255
@@ -18,9 +18,8 @@ T0 = time.time()
 
 def profile_line(tag, t_start, steps):
     """seconds per step, peak VRAM and peak RAM of this process (for packing runs onto cards)"""
-    import resource
     try: rss = int([l for l in open('/proc/self/status') if l.startswith('VmHWM')][0].split()[1]) / 1e6
-    except Exception: rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    except Exception: rss = float('nan')
     return 'PROFILE %s s_per_step %.3f peak_vram_gb %.2f peak_ram_gb %.2f' % (tag, (time.time() - t_start) / max(1, steps), torch.cuda.max_memory_allocated() / 1e9, rss)
 
 def splits(idx, have=lambda c: True):
@@ -75,7 +74,11 @@ def shares(field, eye, subcut, outside, up=2):
     out[:, 1:6] = out[:, 1:6] * inside * (1 - e); out[:, 6:7] = e * inside
     return out / out.sum(1, keepdim=True).clamp(min=1e-6)
 
-def make_ae(F=8, C=8, w=32, soft=True):
+def make_ae(F=8, C=8, w=32, soft=True, arch=None):
+    arch = arch or os.environ.get('ARCH', 'conv')
+    if arch == 'tvae':                                                   # direction D2 (tvae.py)
+        from tvae import TVAE
+        return TVAE(NC, C=C, P=F, soft=soft)
     """the label autoencoder of face_compress.py with the channel norm; input: shares (soft) or class ids (hard)"""
     blk = lambda a, b, s=1: nn.Sequential(nn.Conv3d(a, b, 3, stride=s, padding=1), ChanNorm(b), nn.SiLU(), nn.Conv3d(b, b, 3, padding=1), ChanNorm(b), nn.SiLU())
     n = int(np.log2(F)); ch = [w * 2 ** i for i in range(n + 1)]
@@ -109,7 +112,8 @@ if __name__ == '__main__':
     log({s: len(v) for s, v in sp.items()}, kind)
     H = {c: cached_head(root, c, eye_id) for c in sp['train'] + sp['val']}                # memory-mapped, shared across processes
     KS = ('field', 'eye', 'subcut', 'outside', 'unk') if kind == 'soft' else ('outside', 'unk', 'cls')
-    S = 64; rng = np.random.default_rng(0); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
+    SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED)
+    S = 64; rng = np.random.default_rng(SEED); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
     def crop(cs, n):
         out = {k: [] for k in KS}
         for _ in range(n):
@@ -120,7 +124,11 @@ if __name__ == '__main__':
     # class weights from training shares (rarer tissue, larger weight)
     cnt = np.bincount(np.concatenate([np.asarray(H[c]['cls'][::4, ::4, ::4]).ravel() for c in sp['train']]), minlength=256)[:NC].astype(float); share = cnt / cnt.sum()
     w = torch.tensor(np.where(share > 0, share, share[share > 0].min()) ** -0.5, dtype=torch.float32, device=dev); w = w / w.mean(); log('class shares', np.round(share, 4).tolist())
-    net = make_ae(soft=(kind == 'soft')).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
+    ARCH = os.environ.get('ARCH', 'conv'); KLW = float(os.environ.get('KLW', '1e-4'))     # KL weight per latent channel and token, relative to the per-voxel loss (VAE only; small, as reconstruction-focused VAEs use)
+    net = make_ae(soft=(kind == 'soft'), arch=ARCH).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4)
+    if os.environ.get('WARMUP') == '1':                                  # linear warm-up over the first 5% (as the flow's schedule), then cosine
+        wu = max(1, steps // 20); sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / wu) * 0.5 * (1 + math.cos(math.pi * min(1.0, max(0, i - wu) / max(1, steps - wu)))))
+    else: sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     def batch_targets(b):
         known = (~b['unk']).float()
         if kind == 'soft': tgt = shares(b['field'].float(), b['eye'].float() / 255, b['subcut'], b['outside']); x = tgt
@@ -131,11 +139,11 @@ if __name__ == '__main__':
     for it in range(steps):
         net.train(); b = crop(sp['train'], 2); x, tgt, known = batch_targets(b)
         with torch.autocast('cuda', dtype=AMP): lg = net(x)
-        loss = soft_ce(lg, tgt, known, w); opt.zero_grad(); sc.scale(loss).backward(); sc.step(opt); sc.update(); sched.step()
+        loss = soft_ce(lg, tgt, known, w) + (KLW * net.kl if ARCH == 'tvae' else 0.0); opt.zero_grad(); sc.scale(loss).backward(); sc.step(opt); sc.update(); sched.step()
         if it % max(1, steps // 20) == 0 or it == steps - 1:
             net.eval()
             with torch.no_grad(), torch.autocast('cuda', dtype=AMP): vl = float(np.mean([soft_ce(net(batch_targets(v)[0]), *batch_targets(v)[1:], w).item() for v in val]))
             if vl < best[0]: best = (vl, {k: v.detach().clone() for k, v in net.state_dict().items()}, it)
             log('step', it, 'train %.4f val %.4f' % (loss.item(), vl))
     log(profile_line('ae_' + kind, t_tr, steps))
-    torch.save(dict(state_dict=best[1], kind=kind, soft_in=os.environ.get('SOFT_IN'), F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])
+    torch.save(dict(state_dict=best[1], kind=kind, arch=ARCH, klw=KLW, warmup=os.environ.get('WARMUP'), soft_in=os.environ.get('SOFT_IN'), F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])

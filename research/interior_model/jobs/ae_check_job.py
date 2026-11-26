@@ -2,8 +2,8 @@
 # dependencies = ["huggingface_hub>=1.0", "hf_xet", "numpy", "scipy", "torch", "scikit-image"]
 # ///
 """Autoencoder variants side by side, then the stage gate (ae_check.py) on validation heads (user, 2026-11-26: check the
-encoding before generator training). Trains VARIANTS in parallel on one card (soft = shares straight in; soft_emb = shares
-through a learned 16-d tissue embedding; hard = old class labels), also gates REFS (earlier autoencoders in the repo).
+encoding before generator training). Trains VARIANTS in parallel on one card (name:KEY=VAL;... sets ARCH conv|tvae, WARMUP, SEED, KLW, KIND
+per variant), also gates REFS (earlier autoencoders in the repo).
 Uploads <repo>/field_exp/<TAG>/. env: COMMIT, TAG, FIELDS, AE_STEPS, VARIANTS, REFS (comma list of repo paths). args: <repo>"""
 import os, sys, time, json, subprocess, threading, urllib.request
 from huggingface_hub import HfApi, snapshot_download, hf_hub_download
@@ -21,12 +21,15 @@ def run(name, cmd, env):
     for l in p.stdout: lines.append(l); print('[%s] %s' % (name, l.rstrip()[:1500]), flush=True)
     p.wait(); log('exit', name, p.returncode); os.makedirs(os.path.join(out, name), exist_ok=True); open(os.path.join(out, name, 'log.txt'), 'w').write(''.join(lines))
 th = []
-for v in V:
-    kind = 'hard' if v == 'hard' else 'soft'; env = {'SOFT_IN': 'emb'} if v.endswith('emb') else {}
+VK = {}
+for spec in V:                                                                        # name or name:KEY=VAL;KEY=VAL (e.g. tvae_s1:ARCH=tvae;WARMUP=1;SEED=1)
+    v, _, kv = spec.partition(':'); env = dict(x.split('=', 1) for x in kv.split(';') if x)
+    if v.endswith('emb'): env.setdefault('SOFT_IN', 'emb')
+    kind = env.pop('KIND', 'hard' if v.startswith('hard') else 'soft'); VK[v] = kind
     th.append(threading.Thread(target=run, args=(v, [sys.executable, '-u', 'field_exp.py', fields, os.environ.get('AE_STEPS', '12000'), kind, os.path.join(out, v)], env)))
 for t in th: t.start()
 for t in th: t.join()
-aes = [os.path.join(out, v, 'ae_%s.pt' % ('hard' if v == 'hard' else 'soft')) for v in V]
+aes = [os.path.join(out, v, 'ae_%s.pt' % k) for v, k in VK.items()]
 for r in [x for x in os.environ.get('REFS', '').split(',') if x]:
     d = os.path.join(out, 'ref_' + r.replace('/', '_')); os.makedirs(d, exist_ok=True); p = hf_hub_download(repo, r, repo_type='dataset', local_dir='/data/refs'); dst = os.path.join(d, os.path.basename(p)); os.replace(p, dst); aes.append(dst)
 gt = [threading.Thread(target=run, args=('gate_%d' % i, [sys.executable, '-u', 'ae_check.py', fields, os.path.join(out, 'gate_%d.json' % i), a], {})) for i, a in enumerate(aes)]   # one process per autoencoder

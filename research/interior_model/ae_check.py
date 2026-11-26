@@ -39,7 +39,7 @@ if __name__ == '__main__':
         ck = torch.load(p, map_location='cuda'); kind = ck['kind']
         if 'emb' in os.path.basename(os.path.dirname(p)) or ck.get('soft_in') == 'emb': os.environ['SOFT_IN'] = 'emb'
         else: os.environ.pop('SOFT_IN', None)
-        ae = make_ae(soft=(kind == 'soft')).cuda(); ae.load_state_dict(ck['state_dict']); ae.eval(); rows = {}
+        ae = make_ae(soft=(kind == 'soft'), arch=ck.get('arch', 'conv')).cuda(); ae.load_state_dict(ck['state_dict']); ae.eval(); rows = {}
         for c in cases:
             h = load_head(os.path.join(root, c + '.npz')); a, b, kn = recon(ae, kind, h, eye_id)
             for k in range(1, NC):

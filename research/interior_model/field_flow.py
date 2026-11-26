@@ -19,7 +19,7 @@ root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'fiel
 STEPS = int(os.environ.get('STEPS', '10000')); AUTO = os.environ.get('SHAPE', '0') == 'auto'; SHAPE = 1.0 if AUTO else float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
 idx = json.load(open(os.path.join(root, 'index.json'))); sp = splits(idx, lambda c: os.path.exists(os.path.join(prep, c + '.npz')))
 if os.environ.get('TEST_LIMIT'): sp['test'] = sp['test'][:int(os.environ['TEST_LIMIT'])]
-ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
+ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft'), arch=ck.get('arch', 'conv')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
 for p in ae.parameters(): p.requires_grad_(False)
 F = 8; C = 8
 class Ent: pass

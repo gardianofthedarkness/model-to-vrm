@@ -11,7 +11,7 @@ import time; t_p = time.time(); torch.cuda.reset_peak_memory_stats(); nh = 0
 from transformer_smoke import sdf, tiles
 root, aef, out = sys.argv[1:4]; os.makedirs(out, exist_ok=True); dev = 'cuda'; F = 8
 idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx['eye_id']
-c = torch.load(aef, map_location=dev); ae = make_ae(soft=(c['kind'] == 'soft')).to(dev); ae.load_state_dict(c['state_dict']); ae.eval(); kind = c['kind']
+c = torch.load(aef, map_location=dev); ae = make_ae(soft=(c['kind'] == 'soft'), arch=c.get('arch', 'conv')).to(dev); ae.load_state_dict(c['state_dict']); ae.eval(); kind = c['kind']
 SH = [int(x) for x in os.environ.get('SHARD', '0/1').split('/')]
 for case in sorted(idx['heads'])[SH[0]::SH[1]]:
     h = load_head(os.path.join(root, case + '.npz')); outside = h['hard'] == 0; G = [n // F for n in h['shape']]; sl = tuple(slice(0, g * F) for g in G)
