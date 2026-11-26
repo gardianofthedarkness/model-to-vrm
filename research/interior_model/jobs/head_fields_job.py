@@ -88,7 +88,8 @@ if __name__ == '__main__':
     ids = fi['ids']; lo, hi = np.array(fi['window_lo_mm']), np.array(fi['window_hi_mm'])
     hsf = {c: v for c, v in fi['heads'].items() if v['source'] == 'hanseg'}
     srx = json.load(open(hf_hub_download(srepo, 'face_v1_headframe/index_synthrad.json', repo_type='dataset')))['heads']; srA = {c: v for c, v in srx.items() if c[6] == 'A'}
-    zh = hf_hub_download('gardianofthedarkness/hanseg-ct-mr', 'raw/HaN-Seg.zip', repo_type='dataset', local_dir='/data/hs'); zs = hf_hub_download(srepo, 'raw/14918214/synthRAD2025_Task1_Train.zip', repo_type='dataset', local_dir='/data/sr')
+    zh = hf_hub_download('gardianofthedarkness/hanseg-ct-mr', 'raw/HaN-Seg.zip', repo_type='dataset'); zs = hf_hub_download(srepo, 'raw/14918214/synthRAD2025_Task1_Train.zip', repo_type='dataset')   # normal cache (large files)
+    for f_ in (zh, zs): log(f_, os.path.exists(f_), round(os.path.getsize(f_) / 1e9, 2) if os.path.exists(f_) else 0, 'GB')
     hv = snapshot_download('gardianofthedarkness/hanseg-ct-mr', repo_type='dataset', allow_patterns=['head_v1/*'], local_dir='/data/hv'); hv = os.path.join(hv, 'head_v1')
     srh = snapshot_download(srepo, repo_type='dataset', allow_patterns=['face_v1_headframe/sr_*.npz'], local_dir='/data/srh'); srh = os.path.join(srh, 'face_v1_headframe')
     meta, tasks = {}, {}
