@@ -360,3 +360,32 @@ Voxels outside a scan stay unknown, so a head cut below the nose still teaches w
   licence still to be checked; TRELLIS is MIT.
 - **Comparison.** Test scores per tissue (Dice, surface distance), agreement between draws, the shell-swap test (F6),
   consistency across reruns, and the elf's 3D page. A cost table comes before either 30,000-step run.
+
+### 14.3 Findings from tests 2 and 2.5 (2026-11-25), and the seam test
+
+**Test 2.5, a head model continued on head and pelvis:** arm B's face model, plus 10,000 steps on both parts. Face kept:
+0.285 / 0.327 (one draw / majority) against 0.280 / 0.323 before; covered heads 0.257 against 0.242. Pelvis learned from
+zero to 0.402 (40,000-step v3: 0.512). No forgetting when the head stays in the training mix.
+
+**Test 2, partial heads (CQ500-like: only the top 148 mm in view, the rest unknown).** Same 30 test heads, face priority
+parts (eyes, nose, teeth, mouth, lips, tongue, jaw, masseters, sinus):
+
+| Arm | Priority median | Jaw | Oral cavity | Lips |
+|---|---|---|---|---|
+| Half the people, full heads | 0.628 | 0.59 | 0.72 | 0.47 |
+| Same plus the other half cut | 0.502 | 0.50 | 0.52 | 0.34 |
+| All people full (arm B) | 0.587 | 0.59 | 0.62 | 0.45 |
+
+Cut heads fed without telling the model lowered the lower face by 0.09-0.20 and did not help the upper head. Likely reason:
+the model sees shells that end at the nose and learns lower faces as uncertain. Fixes to test: a coverage fact per head
+(like age and sex), lower loss weight for partial heads. CQ500's upper heads join only after one of these removes the harm.
+Note: "half, full" scored above "all, full", so single runs differ by about 0.04; a repeat of arm B measures the spread,
+and the architecture comparison uses 2-3 seeds per arm.
+
+**Seam test (added on the user's request).** Part windows end at fixed places in their frames, the same at training and
+inference, so they do not cause the harm above. Seams have three other problems: less context near a window edge; two
+separately generated parts that disagree (vertebrae, neck muscles, fat thickness); different frames. Test: on whole-body
+PET/CT (IDC FDG and PSMA collections, skull base to thigh), a trunk window overlapping the pelvis window by about 5 cm,
+generated (a) independently and (b) with the pelvis overlap revealed (partial reveal, section 4.3, resampled between
+frames). Score: disagreement in the overlap (bone positions, fat thickness, muscle edges). Needs a trunk part first
+(v7 milestones Context 17, Trunk 18, Seams 19). Runs after the current tests.
