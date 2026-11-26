@@ -18,7 +18,7 @@ api = HfApi(); repo = sys.argv[1]; C = os.environ['COMMIT']; SUITE = os.environ.
 AE_STEPS = os.environ.get('AE_STEPS', '12000'); STEPS = os.environ.get('STEPS', '10000'); SHAPE = os.environ.get('SHAPE', '0.2')
 SEEDS = os.environ.get('SEEDS', '0,1').split(','); ARMS = os.environ.get('ARMS', 'A0,N,NS,NSP').split(','); SHARDS = int(os.environ.get('SHARDS', '2'))
 ROOT = '/data/fx'; os.makedirs('code', exist_ok=True)
-for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'field_prep.py', 'field_flow.py'):
+for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'field_prep.py', 'field_flow.py', 'tvae.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['%s/*' % FIELDS])
 fields = os.path.join(ROOT, FIELDS); out = os.path.join(ROOT, 'field_exp', SUITE); os.makedirs(out, exist_ok=True)

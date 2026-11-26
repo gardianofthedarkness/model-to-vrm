@@ -11,7 +11,7 @@ t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
 api = HfApi(); repo = sys.argv[1]; C = os.environ['COMMIT']; TAG = os.environ.get('TAG', 'ae_check'); FIELDS = os.environ.get('FIELDS', 'head_fields_v1')
 ROOT = '/data/fx'; os.makedirs('code', exist_ok=True)
-for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'ae_check.py'):
+for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'ae_check.py', 'tvae.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
 snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['%s/*' % FIELDS])
 fields = os.path.join(ROOT, FIELDS); out = os.path.join(ROOT, 'field_exp', TAG); os.makedirs(out, exist_ok=True)
