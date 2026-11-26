@@ -6,11 +6,11 @@ head's existing head frame and the shared 1 mm window of face_v1_headframe. CPU.
   field   raw CT brightness interpolated (linear) into the frame, HU, float16; outside the body -1000
   eye     eyes and lenses as a fraction 0-255 (HaN-Seg: labelling model's masks interpolated; SynthRAD: its head-frame eye label)
   subcut  fat connected to the outside (fat under the skin), packed bits, from the 1 mm field
-  unk     unknown, packed bits: outside the scan; dental metal (saturated voxels) and its streaks (projection-interpolation
+  unk     unknown, packed bits: outside the scan; never-measured fill (exactly the scan minimum, opened 3^3: SynthRAD's defacing wedge); dental metal (saturated voxels) and its streaks (projection-interpolation
           streak map above the noise far from the metal); bone-bright voxels found only in metal slices
   hard    the old labels for the same head (median filter, hard classes, nearest neighbour; eye 16; unknown 255): the baseline
 Tissue types are read from the field at use time: air < -500, fat -190..-30, lean -30..150, bone > 150.
-env: LIMIT, WORKERS. Uploads every 10 heads (<case>.npz + <case>.json) and on restart skips heads already uploaded. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
+env: LIMIT, WORKERS, REDO (source to rebuild). Uploads every 10 heads (<case>.npz + <case>.json) and on restart skips heads already uploaded. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
 import os, sys, json, time, zipfile, numpy as np
 from multiprocessing import Pool
 t0 = time.time()
@@ -58,6 +58,8 @@ def one(arg):
         A = sitk.GetArrayFromImage(im).transpose(2, 1, 0).astype(np.float32); sp = np.array(im.GetSpacing()); D = np.array(im.GetDirection()).reshape(3, 3); org = np.array(im.GetOrigin())
         body = ndi.binary_fill_holes(ndi.median_filter(A, 3) > -500)
         unk, nmetal = streak_unknown(A, body)
+        fill = ndi.binary_opening(A <= A.min(), np.ones((3, 3, 3), bool))   # never measured: defacing wedge / outside the field of view, set to exactly the scan minimum
+        unk |= fill
         # old-style hard labels on the CT grid (as face_set_job.basic_labels)
         S = ndi.median_filter(A, 3); L = np.zeros(A.shape, np.uint8); fat = body & (S >= -190) & (S <= -30); fl, _ = ndi.label(fat | ~body); oid = np.bincount(fl[~body].ravel()).argmax()
         L[body & (S > -30) & (S <= 150)] = 3; L[body & (S < -500)] = 4; L[body & (S > 150)] = 5; L[fat] = 2; L[fat & (fl == oid)] = 1
@@ -79,7 +81,7 @@ def one(arg):
         al, _ = ndi.label(airF | ~bodyF); outer = np.isin(al, np.unique(al[(~bodyF) & ~inside | (F <= -999)])) & (al > 0)
         fatF = (F >= -190) & (F <= -30) & ~outer; fl2, _ = ndi.label(fatF | outer); sub = fatF & np.isin(fl2, np.unique(fl2[outer])) & (fl2 > 0)
         np.savez_compressed(os.path.join(G['out'], case + '.npz'), field=F.astype(np.float16), eye=np.clip(E * 255, 0, 255).astype(np.uint8), subcut=np.packbits(sub), unk=np.packbits(U), hard=H, shape=np.array(shape))
-        return case, dict(source=src, metal_slices=int(nmetal), unknown_ml=round(float(U[inside].sum()) / 1000, 1), outside_scan=round(float((~inside).mean()), 3), eye_ml=round(float((E > 0.5).sum()) / 1000, 1))
+        return case, dict(source=src, fill_ml=round(float(fill.sum() * np.prod(sp)) / 1000, 1), metal_slices=int(nmetal), unknown_ml=round(float(U[inside].sum()) / 1000, 1), outside_scan=round(float((~inside).mean()), 3), eye_ml=round(float((E > 0.5).sum()) / 1000, 1))
     except Exception as e: return case, 'failed: %s %s' % (type(e).__name__, str(e)[:200])
 
 if __name__ == '__main__':
@@ -113,7 +115,10 @@ if __name__ == '__main__':
     stats = {}
     try: have = [f for f in api.list_repo_files(repo, repo_type='dataset') if f.startswith(dest + '/') and f.endswith('.json') and not f.endswith('index.json')]
     except Exception: have = []
-    for f in have: c = os.path.basename(f)[:-5]; stats[c] = json.load(open(hf_hub_download(repo, f, repo_type='dataset')))
+    REDO = os.environ.get('REDO', '')                                                       # a source to rebuild even if uploaded
+    for f in have:
+        c = os.path.basename(f)[:-5]; r_ = json.load(open(hf_hub_download(repo, f, repo_type='dataset')))
+        if REDO not in ('all', r_.get('source')): stats[c] = r_
     work = [w for w in work if w[0] not in stats]; log('resume:', len(stats), 'heads already uploaded,', len(work), 'to do')
     pend = []
     with Pool(nw, _init, (g,), maxtasksperchild=4) as p:
