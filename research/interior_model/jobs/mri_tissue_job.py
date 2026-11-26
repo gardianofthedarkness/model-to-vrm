@@ -12,7 +12,7 @@ T1 MRI of the same person (CC BY-ND 4.0, private use). Numbers and weights only,
    so every head is scored by a model that never saw it; then one model on all heads for later use on other MRIs (IXI).
 3. Scores per tissue in the scoring region: Dice and median surface distance; eyes against the expert outlines; bone inside
    the jaw zone (the expert mandible outline, widened).
-env: STEPS (per fold, default 4000). args: <repo for outputs (the HaN-Seg repo)> [limit]"""
+env: STEPS (per fold, default 4000), SMALL_SHARE (crops centred on eyes and thin fat, default 0.3), OUT_TAG. args: <repo for outputs (the HaN-Seg repo)> [limit]"""
 import os, sys, json, time, zipfile, numpy as np
 t0 = time.time()
 def log(*a): print('TS %5.0fs' % (time.time() - t0), *a, flush=True)
@@ -81,12 +81,16 @@ def train(cases, steps, dev='cuda'):
     from monai.networks.nets import SegResNet
     rng = np.random.default_rng(0); vols = {c: np.load('%s/%s.npz' % (W, c)) for c in cases}; V = {c: (v['M'], v['T']) for c, v in vols.items()}
     cand = {c: np.argwhere(V[c][1][::6, ::6, ::6] < IGN) * 6 for c in cases}; S = 96
+    small = {c: np.argwhere(np.isin(V[c][1][::2, ::2, ::2], [2, 6])) * 2 for c in cases}           # eyes and thin fat: a share of crops is centred on them
+    share = np.bincount(np.concatenate([V[c][1][::4, ::4, ::4].ravel() for c in cases]), minlength=256)[:NCL].astype(float); share /= share.sum()
+    wts = torch.tensor(np.where(share > 0, share, share[share > 0].min()) ** -0.5, dtype=torch.float32, device=dev); wts = wts / wts.mean()   # rarer tissue, larger weight (as the label autoencoder)
+    SMALL = float(os.environ.get('SMALL_SHARE', '0.3'))
     net = SegResNet(spatial_dims=3, in_channels=1, out_channels=NCL, init_filters=16).to(dev); opt = torch.optim.AdamW(net.parameters(), 2e-4, weight_decay=1e-5)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps); scaler = torch.amp.GradScaler(); ce = torch.nn.CrossEntropyLoss(ignore_index=IGN)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps); scaler = torch.amp.GradScaler(); ce = torch.nn.CrossEntropyLoss(weight=wts, ignore_index=IGN)
     def batch(n=2):
         X = np.zeros((n, 1, S, S, S), np.float32); Y = np.full((n, S, S, S), IGN, np.int64)
         for i in range(n):
-            c = cases[rng.integers(len(cases))]; M, T = V[c]; q = cand[c][rng.integers(len(cand[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, T.shape)]
+            c = cases[rng.integers(len(cases))]; M, T = V[c]; q = small[c][rng.integers(len(small[c]))] if (len(small[c]) and rng.random() < SMALL) else cand[c][rng.integers(len(cand[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, T.shape)]
             m = M[o[0]:o[0] + S, o[1]:o[1] + S, o[2]:o[2] + S].astype(np.float32); t = T[o[0]:o[0] + S, o[1]:o[1] + S, o[2]:o[2] + S]
             m = m * rng.uniform(0.85, 1.15) + rng.uniform(-0.05, 0.05)                        # brightness and contrast vary between scanners (IXI later)
             X[i, 0, :m.shape[0], :m.shape[1], :m.shape[2]] = m; Y[i, :t.shape[0], :t.shape[1], :t.shape[2]] = t
@@ -137,7 +141,7 @@ if __name__ == '__main__':
     import SimpleITK as sitk; sitk.ProcessObject_SetGlobalDefaultNumberOfThreads(1)
     with Pool(nw, _init, (zp,), maxtasksperchild=5) as p: s1 = dict(p.imap_unordered(stage1, cases))
     bad = {c: e for c, e in s1.items() if e}; good = [c for c in cases if c not in bad]; log('registered', len(good), 'failed', bad)
-    out = 'mri_tissue' + ('_smoke' if limit else ''); os.makedirs(out, exist_ok=True); rows = []
+    out = 'mri_tissue' + os.environ.get('OUT_TAG', '') + ('_smoke' if limit else ''); os.makedirs(out, exist_ok=True); rows = []
     for f in range(5):
         test = [c for i, c in enumerate(good) if i % 5 == f]; tr = [c for c in good if c not in test]
         if not test or not tr: continue
