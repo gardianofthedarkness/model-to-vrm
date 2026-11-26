@@ -7,17 +7,17 @@ charged per tissue against the true shares from the CT field (known voxels only)
   position  distance of soft centroids / block     topology  1 - soft clDice (Shit et al. 2021: skeletons by soft erosion)
 Test: Euler sampling (16 steps), decoded probabilities; against the true shares on known voxels: Dice of the argmax per
 tissue, surface distance at the 50% level (dense even sampling), and pieces per tissue (argmax, >= 20 voxels) against truth.
-env: OUT, REPO, SHAPE (weight, 0 = off), SEED, STEPS. args: <fields dir> <prep dir> <autoencoder .pt>"""
-import os, sys, json, time, math, numpy as np, torch, torch.nn.functional as F_
+env: OUT, REPO, SHAPE (weight, 0 = off), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
+import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functional as F_
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import load_head, shares, make_ae, NC, NAMES, log, profile_line
+from field_exp import load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
 STEPS = int(os.environ.get('STEPS', '10000')); SHAPE = float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
-idx = json.load(open(os.path.join(root, 'index.json'))); sp = {s: sorted(c for c, v in idx['heads'].items() if v['split'] == s and os.path.exists(os.path.join(prep, c + '.npz'))) for s in ('train', 'val', 'test')}
+idx = json.load(open(os.path.join(root, 'index.json'))); sp = splits(idx, lambda c: os.path.exists(os.path.join(prep, c + '.npz')))
 if os.environ.get('TEST_LIMIT'): sp['test'] = sp['test'][:int(os.environ['TEST_LIMIT'])]
 ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
 for p in ae.parameters(): p.requires_grad_(False)
@@ -32,10 +32,20 @@ for s, cs in sp.items():
 X = np.concatenate([data[c].raw for c in sp['train']]); mu, sd = X.mean(0), X.std(0)
 for e in data.values(): e.z = ((e.raw - mu) / sd).astype(np.float32)
 log({s: len(v) for s, v in sp.items()}, 'shape weight', SHAPE, 'seed', SEED, 'autoencoder', ck['kind'])
-heads = {}
+heads = {}; HC = os.environ.get('HEADCACHE', '/data/hc'); KEYS = ('field', 'eye', 'subcut', 'unk', 'outside')
 def head(c):
+    """full 1 mm head arrays, memory-mapped from a decompressed cache on disk shared by all runs on the card (RAM stays small
+    when several runs share one card); field float16, eye 0-255"""
     if c not in heads:
-        h = load_head(os.path.join(root, c + '.npz')); h['outside'] = h['hard'] == 0; heads[c] = h
+        d = os.path.join(HC, c)
+        if not os.path.exists(os.path.join(d, 'done')):
+            h = load_head(os.path.join(root, c + '.npz')); tmp = '%s.tmp%d' % (d, os.getpid()); os.makedirs(tmp, exist_ok=True)
+            arrs = dict(field=h['field'].astype(np.float16), eye=np.round(h['eye'] * 255).astype(np.uint8), subcut=h['subcut'], unk=h['unk'], outside=h['hard'] == 0)
+            for k in KEYS: np.save(os.path.join(tmp, k + '.npy'), arrs[k])
+            open(os.path.join(tmp, 'done'), 'w').close(); del h, arrs
+            try: os.rename(tmp, d)
+            except OSError: shutil.rmtree(tmp, ignore_errors=True)   # another run wrote it first
+        heads[c] = {k: np.load(os.path.join(d, k + '.npy'), mmap_mode='r') for k in KEYS}
     return heads[c]
 net = Flow(66 - 1, C, NC, 384, 8).to(dev); ema = Flow(66 - 1, C, NC, 384, 8).to(dev); ema.load_state_dict(net.state_dict()); ema.eval()
 for p in ema.parameters(): p.requires_grad_(False)
@@ -76,7 +86,7 @@ def step_loss(c, t, gen):
         g2 = grid.clone(); g2[:, loc[:, 0], loc[:, 1], loc[:, 2]] = z1h[T(np.flatnonzero(inb), torch.long)].T
         with torch.autocast('cuda', dtype=torch.bfloat16): P = torch.softmax(ae.decode(g2[None]).float(), 1)
         vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
-        Tt = shares(T(h['field'][vs])[None], T(h['eye'][vs])[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
+        Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
         sl = shape_loss(P, Tt, K)
         if sl is not None: loss = loss + SHAPE * sl
     return loss, (sl.item() if sl is not None else float('nan'))
@@ -115,7 +125,7 @@ def surf(vol):
 res = {}
 for c in sp['test']:
     e = data[c]; h = head(c); sl = tuple(slice(0, g * F) for g in e.G); known = ~h['unk'][sl]
-    with torch.no_grad(): Tt = torch.cat([shares(T(h['field'][sl][:, :, k0:k0 + 64])[None], T(h['eye'][sl][:, :, k0:k0 + 64])[None], T(h['subcut'][sl][:, :, k0:k0 + 64], torch.bool)[None], T(h['outside'][sl][:, :, k0:k0 + 64], torch.bool)[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
+    with torch.no_grad(): Tt = torch.cat([shares(T(h['field'][sl][:, :, k0:k0 + 64])[None], (T(h['eye'][sl][:, :, k0:k0 + 64]) / 255)[None], T(h['subcut'][sl][:, :, k0:k0 + 64], torch.bool)[None], T(h['outside'][sl][:, :, k0:k0 + 64], torch.bool)[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
     P = decode_probs(e, sample(e)); ap, at = P.argmax(0), Tt.argmax(0); r = {}
     for k in range(1, NC):
         a_, b_ = (ap == k) & known, (at == k) & known

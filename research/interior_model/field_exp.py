@@ -20,6 +20,18 @@ def profile_line(tag, t_start, steps):
     except Exception: rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
     return 'PROFILE %s s_per_step %.3f peak_vram_gb %.2f peak_ram_gb %.2f' % (tag, (time.time() - t_start) / max(1, steps), torch.cuda.max_memory_allocated() / 1e9, rss)
 
+def splits(idx, have=lambda c: True):
+    """train / val / test lists. TEST_SOURCES (default hanseg,pddca: full faces) give val and test by their split; a source in
+    TRAIN_SOURCES but not a test source (e.g. synthrad, whose faces are masked) trains with all its heads."""
+    TS = os.environ.get('TRAIN_SOURCES', 'hanseg,pddca').split(','); ES = os.environ.get('TEST_SOURCES', 'hanseg,pddca').split(',')
+    sp = {'train': [], 'val': [], 'test': []}
+    for c, v in sorted(idx['heads'].items()):
+        if not have(c): continue
+        if v['source'] in ES:
+            if v['split'] != 'train' or v['source'] in TS: sp[v['split']].append(c)
+        elif v['source'] in TS: sp['train'].append(c)
+    return sp
+
 def load_head(path):
     z = np.load(path); shape = tuple(z['shape']); n = int(np.prod(shape))
     unpack = lambda k: np.unpackbits(z[k])[:n].reshape(shape).astype(bool)
@@ -71,25 +83,29 @@ def soft_ce(logits, target, known, w):
 if __name__ == '__main__':
     root, steps, kind, out = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]; os.makedirs(out, exist_ok=True); dev = 'cuda'
     idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx['eye_id']
-    heads = {c: v for c, v in idx['heads'].items()}; sp = {s: sorted(c for c, v in heads.items() if v['split'] == s) for s in ('train', 'val', 'test')}
+    sp = splits(idx)
     log({s: len(v) for s, v in sp.items()}, kind)
     H = {c: load_head(os.path.join(root, c + '.npz')) for c in sp['train'] + sp['val']}
-    for h in H.values(): h['outside'] = h['hard'] == 0; h['cls'] = hard_classes(h['hard'], eye_id)
+    for h in H.values():                                             # keep only what this kind needs, compactly (RAM: several runs share a card)
+        h['outside'] = h['hard'] == 0; h['cls'] = hard_classes(h['hard'], eye_id); del h['hard']
+        if kind == 'soft': h['field'] = h['field'].astype(np.float16); h['eye'] = np.round(h['eye'] * 255).astype(np.uint8); del h['cls']
+        else: del h['field'], h['eye'], h['subcut']
+    KS = ('field', 'eye', 'subcut', 'outside', 'unk') if kind == 'soft' else ('outside', 'unk', 'cls')
     S = 64; rng = np.random.default_rng(0); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
     def crop(cs, n):
-        out = {k: [] for k in ('field', 'eye', 'subcut', 'outside', 'unk', 'cls')}
+        out = {k: [] for k in KS}
         for _ in range(n):
             c = cs[rng.integers(len(cs))]; h = H[c]; q = BI[c][rng.integers(len(BI[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, h['shape'])]
             sl = tuple(slice(a, a + S) for a in o)
             for k in out: out[k].append(np.pad(h[k][sl], [(0, S - x) for x in h[k][sl].shape], constant_values={'field': -1000, 'eye': 0, 'subcut': 0, 'outside': 1, 'unk': 1, 'cls': UNK}[k]))
         return {k: torch.tensor(np.stack(v), device=dev) for k, v in out.items()}
     # class weights from training shares (rarer tissue, larger weight)
-    cnt = np.bincount(np.concatenate([h['cls'][::4, ::4, ::4].ravel() for c, h in H.items() if c in sp['train']]), minlength=256)[:NC].astype(float); share = cnt / cnt.sum()
+    cnt = np.bincount(np.concatenate([hard_classes(load_head(os.path.join(root, c + '.npz'))['hard'][::4, ::4, ::4], eye_id).ravel() for c in sp['train']]), minlength=256)[:NC].astype(float); share = cnt / cnt.sum()
     w = torch.tensor(np.where(share > 0, share, share[share > 0].min()) ** -0.5, dtype=torch.float32, device=dev); w = w / w.mean(); log('class shares', np.round(share, 4).tolist())
     net = make_ae(soft=(kind == 'soft')).to(dev); opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=1e-4); sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     def batch_targets(b):
         known = (~b['unk']).float()
-        if kind == 'soft': tgt = shares(b['field'], b['eye'], b['subcut'], b['outside']); x = tgt
+        if kind == 'soft': tgt = shares(b['field'].float(), b['eye'].float() / 255, b['subcut'], b['outside']); x = tgt
         else: c = b['cls'].long(); tgt = F_.one_hot(c.clamp(max=NC - 1), NC).permute(0, 4, 1, 2, 3).float(); known = known * (c != UNK).float(); x = c.clamp(max=NC)
         return x, tgt, known
     val = [crop(sp['val'], 2) for _ in range(6)]; best = (1e9, None, 0); torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
