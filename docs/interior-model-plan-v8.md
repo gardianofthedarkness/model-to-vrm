@@ -460,7 +460,7 @@ A0 old hard labels; N new continuous field, tissue + eye; NS N + shell loss (sof
 the decoded one-step estimate, weight set each step so the shell part equals the flow loss: no set number); NSP NS + 85
 SynthRAD heads with the masked face unknown. Seeds 0 and 1 for N, NS, NSP. NSP ran out of GPU memory beside the other
 five (full-size runs peak at 6-9 GB, not the smoke test's 3-4) and runs as a follow-up reusing the same autoencoders
-and preparation. Lesson: cap processes per card by measured peak memory (MAXPAR). Results go in 14.8.
+and preparation. Lesson: cap processes per card by measured peak memory (MAXPAR). Results go in 14.9.
 
 ### 14.7 What MAGI-1 teaches for D2 (SandAI, "MAGI-1: Autoregressive Video Generation at Scale", 2025; code Apache-2.0)
 
@@ -478,3 +478,18 @@ generator, petabytes of video) is far from ours (~15M generator, under 200 heads
 | Logit-normal timestep sampling (most compute at low noise); QK-norm; sandwich norm; softcapped adaLN scale | flow transformer (D1 and D2) | adopt QK-norm and logit-normal t in the next phase for both directions (cheap, stabilising). Not in suite1, which keeps conditions fixed |
 | Guidance on the previous chunk (w_prev) and on text, strength by timestep | shell conditioning | test classifier-free guidance on the shell tokens (drop the shell in some training steps) after D1/D2 |
 | MagiAttention for up to 4M tokens | none | not needed: our sequences are thousands of tokens |
+
+### 14.8 MAGI-2-preview (SandAI, blog 2026-08-05; code and weights Apache-2.0; "intermediate research release")
+
+What changed from MAGI-1, and what we take:
+
+| MAGI-2-preview | Our use | Decision |
+|---|---|---|
+| **Dropped MAGI-1's chunk-wise autoregression**: one single-stream transformer generates the whole clip, audio and video together | seams (14.3, 14.7) | prefer **one stream over the whole body** while the tokens fit (a head is thousands of tokens); keep MAGI-1-style chunks only as the fallback when a whole body does not fit |
+| Audio and video tokens in the **same stream** (not one conditioning the other) | shell and interior | test putting shell tokens and interior tokens in one stream (joint attention) instead of the interior cross-attending to the shell; later other channels (MRI brightness, joint positions) as more token types |
+| **Two stages**: low-resolution generation, then a refiner to full resolution (100 + 5 steps) | fine boundaries | a **refiner stage**: the 8 mm generator places tissues, a small refiner sharpens boundaries at 1 mm (or 0.5 mm) toward the continuous-field precision (14.5). Fits the thin fat layers |
+| Reused an existing VAE (Wan2.2) and **distilled a fast "turbo" decoder** | live runtime | keep the gated transformer VAE as the tokenizer; distil a small fast decoder for games and VRChat, beside step distillation of the generator |
+| MoE backbone (114B, 6B active), Head Parallel, fused kernels | none | not at our scale |
+| **Muon-type optimizer** (MagiMuon, orthogonalised per head/expert matrix; Adam for small parameters) | training speed | cheap test: Muon vs AdamW on the transformer VAE and the flow, same steps, gate and test scores |
+| Deterministic-kernel switch (bit-exact runs) | seed tests | make runs reproducible where cheap (fixed seeds already; deterministic attention optional) |
+| Multi-shot identity consistency, reported qualitatively only | none yet | no evidence to use |
