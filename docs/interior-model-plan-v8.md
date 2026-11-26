@@ -431,3 +431,8 @@ mandible (spongy bone lost).
 Decision: identity from the labelling models; tissue boundaries from the raw CT as continuous fields (signed distance per
 tissue at the CT's own resolution, carried into the head frame by interpolation, not by nearest labels). Target: tissue
 surfaces under 0.5 mm. Edge snapping only where a real edge exists; not now.
+Continuous-field test (`tissue_fields_test.py`, surfaces compared by dense even sampling, 3 heads): current labels
+fat|lean 0.47-0.50 mm median, 1.44-2.32 mm 90th percentile; bone 0.41-0.43 / 0.82-0.89. Raw CT brightness interpolated
+onto 1 mm, surface at the HU level: fat|lean 0.32-0.35 / 0.57-0.61; bone 0.29-0.31 / 0.50-0.53. At 0.5 mm only slightly
+better (0.29-0.32 / 0.51-0.57). The worst 10% improves 2-4 times; 1 mm is enough. 3D jaw from the field is smooth (teeth,
+nasal opening visible); from hard labels it is a staircase of 2 mm slices.
