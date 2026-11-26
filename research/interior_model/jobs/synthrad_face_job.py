@@ -69,13 +69,15 @@ if __name__ == '__main__':
     cts = sorted(n for n in Z.namelist() if n.endswith('/ct.mha') and '/HN/' in n)
     if LIMIT: cts = cts[:: max(1, len(cts) // LIMIT)][:LIMIT]
     os.makedirs(W + '/out', exist_ok=True); log(len(cts), 'head-and-neck CTs,', PAR, 'at a time')
-    cases = []
-    for n in cts:
+    cases = [('sr_' + n.rsplit('/', 2)[-2], n) for n in cts]                                     # each CT is unpacked just before its turn and deleted after (memory)
+    import threading; zlock = threading.Lock()
+    def unpack(case, n):
         import SimpleITK as sitk
-        case = 'sr_' + n.rsplit('/', 2)[-2]; m = '%s/%s.mha' % (W, case); open(m, 'wb').write(Z.read(n))
-        p = '%s/%s.nii.gz' % (W, case); sitk.WriteImage(sitk.ReadImage(m), p); os.remove(m); cases.append((case, p))   # TotalSegmentator reads NIfTI, not .mha
+        m = '%s/%s.mha' % (W, case)
+        with zlock: open(m, 'wb').write(Z.read(n))
+        p = '%s/%s.nii.gz' % (W, case); sitk.WriteImage(sitk.ReadImage(m), p); os.remove(m); return p   # TotalSegmentator reads NIfTI, not .mha
     def seg(cp):
-        case, p = cp; q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, '%s/%s_seg.npz' % (W, case)], capture_output=True, text=True, timeout=1800)
+        case, n = cp; p = unpack(case, n); q = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--one', case, p, '%s/%s_seg.npz' % (W, case)], capture_output=True, text=True, timeout=1800)
         return case, None if q.returncode == 0 else ('out of memory (killed)' if q.returncode in (-9, 137) else 'exit %d: %s' % (q.returncode, q.stderr.strip()[-200:]))
     index, failed = {}, {}
     first = [seg(cases[0])] if cases else []                                                      # the first CT alone: it downloads the model weights once (parallel downloads collide)
@@ -88,6 +90,8 @@ if __name__ == '__main__':
                 else: index[case] = m
                 log(case, m if m else why)
             except Exception as e: failed[case] = '%s %s' % (type(e).__name__, str(e)[:150]); log(case, failed[case])
+            for f_ in ('%s/%s.nii.gz' % (W, case), '%s/%s_seg.npz' % (W, case)):
+                if os.path.exists(f_): os.remove(f_)
     for i, c in enumerate(sorted(index)): index[c]['split'] = 'test' if i % 10 == 0 else 'val' if i % 10 == 1 else 'train'
     json.dump(dict(heads=index, failed=failed), open('%s/out/index_synthrad.json' % W, 'w'), indent=1)
     log('SUMMARY', json.dumps(dict(cts=len(cts), done=len(index), failed=len(failed), eye_ml_median=float(np.median([m['eye_ml'] for m in index.values()])) if index else None,
