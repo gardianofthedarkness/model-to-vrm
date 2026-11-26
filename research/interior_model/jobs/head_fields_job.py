@@ -10,7 +10,7 @@ head's existing head frame and the shared 1 mm window of face_v1_headframe. CPU.
           streak map above the noise far from the metal); bone-bright voxels found only in metal slices
   hard    the old labels for the same head (median filter, hard classes, nearest neighbour; eye 16; unknown 255): the baseline
 Tissue types are read from the field at use time: air < -500, fat -190..-30, lean -30..150, bone > 150.
-env: LIMIT, WORKERS. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
+env: LIMIT, WORKERS. Uploads every 10 heads (<case>.npz + <case>.json) and on restart skips heads already uploaded. args: <repo for output> (hanseg-ct-mr) <synthrad repo>"""
 import os, sys, json, time, zipfile, numpy as np
 from multiprocessing import Pool
 t0 = time.time()
@@ -105,9 +105,23 @@ if __name__ == '__main__':
     try: ram = int(open('/sys/fs/cgroup/memory.max').read()) / 1e9
     except Exception: ram = 30
     nw = int(os.environ.get('WORKERS', max(1, min(os.cpu_count() or 4, int(ram // 8))))); log(len(work), 'heads,', nw, 'workers')
+    dest = 'head_fields_v1' + ('_smoke' if LIMIT else '')
+    def push(files):
+        for a in range(5):
+            try: api.upload_folder(folder_path=out, path_in_repo=dest, repo_id=repo, repo_type='dataset', allow_patterns=files, commit_message='head fields v1 (%d heads)' % (len(files) // 2)); return
+            except Exception as e: log('upload retry', a, type(e).__name__); time.sleep(60)
     stats = {}
+    try: have = [f for f in api.list_repo_files(repo, repo_type='dataset') if f.startswith(dest + '/') and f.endswith('.json') and not f.endswith('index.json')]
+    except Exception: have = []
+    for f in have: c = os.path.basename(f)[:-5]; stats[c] = json.load(open(hf_hub_download(repo, f, repo_type='dataset')))
+    work = [w for w in work if w[0] not in stats]; log('resume:', len(stats), 'heads already uploaded,', len(work), 'to do')
+    pend = []
     with Pool(nw, _init, (g,), maxtasksperchild=4) as p:
-        for c, r in p.imap_unordered(one, work): stats[c] = r; log(c, r)
+        for c, r in p.imap_unordered(one, work):
+            stats[c] = r; log(c, r)
+            if isinstance(r, dict): json.dump(r, open(os.path.join(out, c + '.json'), 'w')); pend += [c + '.npz', c + '.json']
+            if len(pend) >= 20: push(pend); [os.remove(os.path.join(out, f)) for f in pend]; pend = []
+    if pend: push(pend); [os.remove(os.path.join(out, f)) for f in pend]
     ok = {c: r for c, r in stats.items() if isinstance(r, dict)}
     for i, c in enumerate(sorted(ok)): ok[c]['split'] = fi['heads'][c].get('split') if c in fi['heads'] and fi['heads'][c].get('split') else srx.get(c, {}).get('split') or ('test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train')
     hs_sorted = sorted(c for c in ok if ok[c]['source'] == 'hanseg')
@@ -115,8 +129,5 @@ if __name__ == '__main__':
     json.dump(dict(window_lo_mm=lo.tolist(), window_hi_mm=hi.tolist(), voxel_mm=1.0, eye_id=ids['eye_left'], levels=dict(air=-500, fat=[-190, -30], lean=[-30, 150], bone=150),
                    heads=ok, failed={c: r for c, r in stats.items() if not isinstance(r, dict)}), open(os.path.join(out, 'index.json'), 'w'), indent=1)
     log('SUMMARY', json.dumps(dict(heads=len(work), ok=len(ok), failed=len(stats) - len(ok), metal_heads=sum(r['metal_slices'] > 0 for r in ok.values()))))
-    dest = 'head_fields_v1' + ('_smoke' if LIMIT else '')
-    for a in range(5):
-        try: api.upload_folder(folder_path=out, path_in_repo=dest, repo_id=repo, repo_type='dataset', commit_message='head fields v1 (continuous CT field, eye, unknown)'); break
-        except Exception as e: log('upload retry', a, type(e).__name__); time.sleep(60)
+    push(['index.json'])
     log('SUMMARY done')
