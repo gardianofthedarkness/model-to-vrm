@@ -7,7 +7,7 @@ charged per tissue against the true shares from the CT field (known voxels only)
   position  distance of soft centroids / block     topology  1 - soft clDice (Shit et al. 2021: skeletons by soft erosion)
 Test: Euler sampling (16 steps), decoded probabilities; against the true shares on known voxels: Dice of the argmax per
 tissue, surface distance at the 50% level (dense even sampling), and pieces per tissue (argmax, >= 20 voxels) against truth.
-env: OUT, REPO, SHAPE (weight, 0 = off), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
+env: OUT, REPO, SHAPE (weight, 0 = off, auto = shell part equal to the flow loss each step), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
 import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functional as F_
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
@@ -16,7 +16,7 @@ from field_exp import load_head, splits, shares, make_ae, NC, NAMES, log, profil
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
-STEPS = int(os.environ.get('STEPS', '10000')); SHAPE = float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
+STEPS = int(os.environ.get('STEPS', '10000')); AUTO = os.environ.get('SHAPE', '0') == 'auto'; SHAPE = 1.0 if AUTO else float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
 idx = json.load(open(os.path.join(root, 'index.json'))); sp = splits(idx, lambda c: os.path.exists(os.path.join(prep, c + '.npz')))
 if os.environ.get('TEST_LIMIT'): sp['test'] = sp['test'][:int(os.environ['TEST_LIMIT'])]
 ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
@@ -88,7 +88,9 @@ def step_loss(c, t, gen):
         vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
         Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
         sl = shape_loss(P, Tt, K)
-        if sl is not None: loss = loss + SHAPE * sl
+        if sl is not None:
+            w = (loss.detach() / sl.detach().clamp(min=1e-6)) if AUTO else SHAPE   # auto (user, 2026-11-26): the shell part equals the flow loss at every step, no set weight
+            loss = loss + w * sl
     return loss, (sl.item() if sl is not None else float('nan'))
 gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []; torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
 for it in range(STEPS):
@@ -97,8 +99,8 @@ for it in range(STEPS):
     with torch.no_grad():
         for pe_, pn in zip(ema.parameters(), net.parameters()): pe_.mul_(0.999).add_(pn, alpha=0.001)
     if it % max(1, STEPS // 20) == 0 or it == STEPS - 1: log('step', it, 'loss %.4f shape %.4f' % (loss.item(), sl)); hist.append((it, loss.item(), sl))
-log(profile_line('flow_shape%g' % SHAPE, t_tr, STEPS)); torch.cuda.reset_peak_memory_stats(); t_te = time.time()
-torch.save(dict(state_dict=ema.state_dict(), mu=mu, sd=sd, shape=SHAPE, seed=SEED), os.path.join(OUT, 'flow.pt'))
+log(profile_line('flow_shape%s' % ('auto' if AUTO else '%g' % SHAPE), t_tr, STEPS)); torch.cuda.reset_peak_memory_stats(); t_te = time.time()
+torch.save(dict(state_dict=ema.state_dict(), mu=mu, sd=sd, shape='auto' if AUTO else SHAPE, seed=SEED), os.path.join(OUT, 'flow.pt'))
 # ---- test
 @torch.no_grad()
 def sample(e, steps=16, seed=0):
@@ -141,5 +143,5 @@ summ = {}
 for k in NAMES[1:]:
     rows = [r[k] for r in res.values() if k in r]
     if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
-json.dump(dict(summary=summ, per_head=res, shape=SHAPE, seed=SEED, steps=STEPS, kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow.json'), 'w'), indent=1)
+json.dump(dict(summary=summ, per_head=res, shape='auto' if AUTO else SHAPE, seed=SEED, steps=STEPS, kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow.json'), 'w'), indent=1)
 log(profile_line('test', t_te, max(1, len(sp['test'])))); log('SUMMARY', json.dumps(summ))
