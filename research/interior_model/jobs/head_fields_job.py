@@ -35,7 +35,8 @@ def streak_unknown(A, body):
         for j in range(P.shape[1]):
             b = Pm[:, j]
             if b.any() and (~b).sum() > 2: Pc[b, j] = np.interp(np.flatnonzero(b), np.flatnonzero(~b), P[~b, j])
-        d = ndi.zoom(iradon(Pc, theta=th, circle=False, output_size=s.shape[0]) - iradon(P, theta=th, circle=False, output_size=s.shape[0]), 2, order=1)[:S.shape[0], :S.shape[1]]
+        dd = iradon(Pc, theta=th, circle=False, output_size=s.shape[0]) - iradon(P, theta=th, circle=False, output_size=s.shape[0])
+        d = ndi.zoom(dd, (nn / dd.shape[0], nn / dd.shape[1]), order=1)[:S.shape[0], :S.shape[1]]   # back to the exact padded size, then the slice
         streak[:, :, z] = np.abs(d)
     aff = np.zeros(A.shape, bool); aff[:, :, zs] = True; far = ndi.distance_transform_edt(~metal) > 60
     noise = float(np.percentile(streak[far & aff & body], 99)) if (far & aff & body).any() else 1e9
