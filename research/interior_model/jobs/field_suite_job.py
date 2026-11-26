@@ -8,7 +8,7 @@ tagging, shell loss, masked partial faces). Stages, each as parallel processes o
   3. flows (ARMS): A0 hard; N soft; NS soft + shell loss; NSP soft + shell loss + SynthRAD's masked-face heads
 Test heads are full faces only (HaN-Seg and PDDCA test splits). nvidia-smi and free memory are logged every GPU_LOG s.
 Uploads <repo>/field_exp/<SUITE>/... after each stage.
-env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once).
+env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once), AE_FROM (gated soft autoencoder to use).
 args: <repo>"""
 import os, sys, time, json, subprocess, threading, urllib.request
 from huggingface_hub import HfApi, snapshot_download
@@ -66,10 +66,17 @@ if REUSE:
     for d in os.listdir(src):
         if d.startswith(('ae_', 'prep_')): os.symlink(os.path.join(src, d), os.path.join(out, d))
     log('reusing autoencoders and preparation of', REUSE, sorted(os.listdir(out)))
+AE_FROM = os.environ.get('AE_FROM')                                                     # repo path of an autoencoder that passed the gate: used as the soft one, not retrained
+if AE_FROM:
+    from huggingface_hub import hf_hub_download
+    os.makedirs(os.path.join(out, 'ae_soft'), exist_ok=True); p_ = hf_hub_download(repo, AE_FROM, repo_type='dataset', local_dir='/data/aefrom'); os.replace(p_, os.path.join(out, 'ae_soft', 'ae_soft.pt'))
+    open(os.path.join(out, 'ae_soft', 'source.txt'), 'w').write(AE_FROM); log('autoencoder from', AE_FROM)
+    kinds_train = [k for k in kinds if k != 'soft']
+else: kinds_train = kinds
 # 1. autoencoders
-if not REUSE: r = parallel([('ae_' + k, py + ['field_exp.py', fields, AE_STEPS, k, os.path.join(out, 'ae_' + k)], {}) for k in kinds])
-if not REUSE:
-    for k in kinds: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
+if not REUSE and kinds_train: r = parallel([('ae_' + k, py + ['field_exp.py', fields, AE_STEPS, k, os.path.join(out, 'ae_' + k)], {}) for k in kinds_train])
+if not REUSE and kinds_train:
+    for k in kinds_train: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
     up(out, 'field_exp/' + SUITE); log('stage autoencoders done')
 # 2. preparation (all heads, both kinds, SHARDS processes each)
 if not REUSE: r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
