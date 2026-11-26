@@ -406,3 +406,14 @@ Noise between identical 10,000-step runs: about 0.01-0.02 on the face medians (a
 eyes 0.79 (against expert outlines 0.77), jaw bone 0.81, air 0.74, all bone 0.72, lean 0.83, fat under the skin 0.68,
 thin fat 0.16; surfaces 1.5-2.1 mm. MRI aligns with CT for every priority part. The model trained on all 42 pairs is
 saved as hanseg-ct-mr/mri_tissue_v2/segresnet_all.pt for IXI. IXI comes from other scanners: check a sample first.
+
+**SynthRAD labelled (2026-11-26):** 128 of 156 heads in the head frame (tissue types; synthrad2025/face_v1_headframe,
+index_synthrad.json; split 102 train, 13 val, 13 test). Centre A: 85 of 91, complete (18% of the window outside the scan).
+Centre C: 43 of 65, top of the skull cut (53% outside the scan; face and jaw present). 28 failed, all for a missing eye or
+ear canal at the top edge of the scan (22 from centre C); placing them by the shell fit instead could recover them.
+Complete full-face heads: 42 HaN-Seg + 61 TotalSegmentator + 85 SynthRAD = 188; plus 43 top-cut.
+
+**IXI local check (6 heads, MRI tissue model v2):** eyes found as two 6-10 ml pieces in 5 of 6; scalp, face fat, skull ring
+and airway read cleanly. Inside the brain the model paints bone and fat patches (IXI's brain-research contrast differs from
+the HaN-Seg radiotherapy MRIs). Fixes: brain mask from SynthStrip (FreeSurfer) set to the organ class; test and retrain
+the MRI model on SynthRAD's MRI-CT pairs (other scanners).
