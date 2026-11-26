@@ -13,6 +13,13 @@ NC = 7; NAMES = ['outside', 'fat_under_skin', 'fat_other', 'lean', 'air', 'bone'
 def log(*a): print('TS %6.0fs' % (time.time() - T0), *a, flush=True)
 T0 = time.time()
 
+def profile_line(tag, t_start, steps):
+    """seconds per step, peak VRAM and peak RAM of this process (for packing runs onto cards)"""
+    import resource
+    try: rss = int([l for l in open('/proc/self/status') if l.startswith('VmHWM')][0].split()[1]) / 1e6
+    except Exception: rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    return 'PROFILE %s s_per_step %.3f peak_vram_gb %.2f peak_ram_gb %.2f' % (tag, (time.time() - t_start) / max(1, steps), torch.cuda.max_memory_allocated() / 1e9, rss)
+
 def load_head(path):
     z = np.load(path); shape = tuple(z['shape']); n = int(np.prod(shape))
     unpack = lambda k: np.unpackbits(z[k])[:n].reshape(shape).astype(bool)
@@ -85,7 +92,7 @@ if __name__ == '__main__':
         if kind == 'soft': tgt = shares(b['field'], b['eye'], b['subcut'], b['outside']); x = tgt
         else: c = b['cls'].long(); tgt = F_.one_hot(c.clamp(max=NC - 1), NC).permute(0, 4, 1, 2, 3).float(); known = known * (c != UNK).float(); x = c.clamp(max=NC)
         return x, tgt, known
-    val = [crop(sp['val'], 2) for _ in range(6)]; best = (1e9, None, 0)
+    val = [crop(sp['val'], 2) for _ in range(6)]; best = (1e9, None, 0); torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
     for it in range(steps):
         net.train(); b = crop(sp['train'], 2); x, tgt, known = batch_targets(b)
         with torch.autocast('cuda', dtype=torch.bfloat16): lg = net(x)
@@ -95,4 +102,5 @@ if __name__ == '__main__':
             with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16): vl = float(np.mean([soft_ce(net(batch_targets(v)[0]), *batch_targets(v)[1:], w).item() for v in val]))
             if vl < best[0]: best = (vl, {k: v.detach().clone() for k, v in net.state_dict().items()}, it)
             log('step', it, 'train %.4f val %.4f' % (loss.item(), vl))
+    log(profile_line('ae_' + kind, t_tr, steps))
     torch.save(dict(state_dict=best[1], kind=kind, F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])

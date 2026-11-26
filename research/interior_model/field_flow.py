@@ -12,12 +12,13 @@ import os, sys, json, time, math, numpy as np, torch, torch.nn.functional as F_
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import load_head, shares, make_ae, NC, NAMES, log
+from field_exp import load_head, shares, make_ae, NC, NAMES, log, profile_line
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
 STEPS = int(os.environ.get('STEPS', '10000')); SHAPE = float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
 idx = json.load(open(os.path.join(root, 'index.json'))); sp = {s: sorted(c for c, v in idx['heads'].items() if v['split'] == s and os.path.exists(os.path.join(prep, c + '.npz'))) for s in ('train', 'val', 'test')}
+if os.environ.get('TEST_LIMIT'): sp['test'] = sp['test'][:int(os.environ['TEST_LIMIT'])]
 ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
 for p in ae.parameters(): p.requires_grad_(False)
 F = 8; C = 8
@@ -79,13 +80,14 @@ def step_loss(c, t, gen):
         sl = shape_loss(P, Tt, K)
         if sl is not None: loss = loss + SHAPE * sl
     return loss, (sl.item() if sl is not None else float('nan'))
-gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []
+gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []; torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
 for it in range(STEPS):
     net.train(); c = sp['train'][rng.integers(len(sp['train']))]; t = float(rng.random())
     loss, sl = step_loss(c, t, gen); opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step(); sched.step()
     with torch.no_grad():
         for pe_, pn in zip(ema.parameters(), net.parameters()): pe_.mul_(0.999).add_(pn, alpha=0.001)
     if it % max(1, STEPS // 20) == 0 or it == STEPS - 1: log('step', it, 'loss %.4f shape %.4f' % (loss.item(), sl)); hist.append((it, loss.item(), sl))
+log(profile_line('flow_shape%g' % SHAPE, t_tr, STEPS)); torch.cuda.reset_peak_memory_stats(); t_te = time.time()
 torch.save(dict(state_dict=ema.state_dict(), mu=mu, sd=sd, shape=SHAPE, seed=SEED), os.path.join(OUT, 'flow.pt'))
 # ---- test
 @torch.no_grad()
@@ -127,4 +129,4 @@ for k in NAMES[1:]:
     rows = [r[k] for r in res.values() if k in r]
     if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
 json.dump(dict(summary=summ, per_head=res, shape=SHAPE, seed=SEED, steps=STEPS, kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow.json'), 'w'), indent=1)
-log('SUMMARY', json.dumps(summ))
+log(profile_line('test', t_te, max(1, len(sp['test'])))); log('SUMMARY', json.dumps(summ))

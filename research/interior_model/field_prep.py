@@ -6,7 +6,8 @@ result tile-independent apart from the receptive field, so tiles overlap and kee
 Output <out>/<case>.npz: idx (int16), feat, pos, code (C, G) float16. args: <fields dir> <autoencoder .pt> <out dir>"""
 import os, sys, json, numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import load_head, hard_classes, shares, make_ae, NC, log
+from field_exp import load_head, hard_classes, shares, make_ae, NC, log, profile_line
+import time; t_p = time.time(); torch.cuda.reset_peak_memory_stats(); nh = 0
 from transformer_smoke import sdf, tiles
 root, aef, out = sys.argv[1:4]; os.makedirs(out, exist_ok=True); dev = 'cuda'; F = 8
 idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx['eye_id']
@@ -30,5 +31,6 @@ for case in sorted(idx['heads'])[SH[0]::SH[1]]:
     Dp = blk(D).reshape(*G, 4, p, 4, p, 4, p).mean((4, 6, 8))
     feat = np.concatenate([Dp[tuple(tok.T)].reshape(len(tok), -1), blk(known).reshape(*G, -1).mean(-1)[tuple(tok.T)][:, None]], 1).astype(np.float32)
     np.savez_compressed(os.path.join(out, case + '.npz'), idx=tok.astype(np.int16), feat=feat, pos=((tok + 0.5) * F / 100.0).astype(np.float32), code=code.cpu().numpy().astype(np.float16))
-    log(case, kind, 'tokens', len(tok))
+    log(case, kind, 'tokens', len(tok)); nh += 1
+log(profile_line('prep_per_head', t_p, nh))
 json.dump(dict(autoencoder=os.path.basename(aef), kind=kind), open(os.path.join(out, 'prep_shard_%d.json' % SH[0]), 'w'))
