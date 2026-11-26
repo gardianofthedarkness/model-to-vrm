@@ -436,3 +436,45 @@ fat|lean 0.47-0.50 mm median, 1.44-2.32 mm 90th percentile; bone 0.41-0.43 / 0.8
 onto 1 mm, surface at the HU level: fat|lean 0.32-0.35 / 0.57-0.61; bone 0.29-0.31 / 0.50-0.53. At 0.5 mm only slightly
 better (0.29-0.32 / 0.51-0.57). The worst 10% improves 2-4 times; 1 mm is enough. 3D jaw from the field is smooth (teeth,
 nasal opening visible); from hard labels it is a staircase of 2 mm slices.
+
+### 14.6 Head data correction and the field experiment (2026-11-26)
+
+**SynthRAD is defaced.** Every SynthRAD2025 head-and-neck CT checked (6 of 6 mid-sagittal views, raw archive) has a wedge
+over nose, lips, front of the eyes and chin filled with exactly -1024 HU, the scan minimum; its real air is noisy around
+-1000. SynthRAD eye volumes were half of HaN-Seg's (median 8.8 against 18.6 ml). The census in 14.4 missed it. Decision:
+exact-minimum voxels (opened by 3^3) are unknown, for SynthRAD only (HaN-Seg's scanner clamps real air to the minimum
+too, so the rule would wrongly mark its air). SynthRAD stays as partial heads; it never scores the face. Corrected count
+of complete faces: HaN-Seg 42 + TotalSegmentator 61 (raw not yet re-fetched), not 188.
+
+**New open sources searched** (no emailed agreements). Kept: **PDDCA** (48 radiotherapy head-and-neck CTs, CC BY 3.0
+mirror; all 48 show nose, lips and chin; head frame placed for 48 of 48, eye median 18.9 ml). Rejected: **VSDFullBody**
+(Zenodo 8270365, post-mortem CT, copied privately as vsd-fullbody-ct for later trunk work): head series have a 212-272 mm
+field of view that clips the face, post-mortem gas and fractures, whole-body series start at the shoulders. Not open:
+TCIA head-and-neck collections (NIH controlled access since April 2025), NMDID, HECKTOR, SegRap, OASIS-3. Defaced: open
+FDG PET/CT copy, SynthRAD2023, the 120-person head CT-MRI set on Zenodo. Not whole heads: MUG500+ (skull only),
+ToothFairy (dental CBCT), HNTS-MRG. Full-face heads now: 90 labelled (HaN-Seg 42 + PDDCA 48).
+
+**Field experiment (suite1, one L40S):** same full-face training heads (HaN-Seg + PDDCA train), same test heads (HaN-Seg
++ PDDCA test), 10,000 flow steps, conv autoencoder with channel norm (12,000 steps) and the flow transformer:
+A0 old hard labels; N new continuous field, tissue + eye; NS N + shell loss (soft Dice, size, centroid, soft clDice on
+the decoded one-step estimate, weight set each step so the shell part equals the flow loss: no set number); NSP NS + 85
+SynthRAD heads with the masked face unknown. Seeds 0 and 1 for N, NS, NSP. NSP ran out of GPU memory beside the other
+five (full-size runs peak at 6-9 GB, not the smoke test's 3-4) and runs as a follow-up reusing the same autoencoders
+and preparation. Lesson: cap processes per card by measured peak memory (MAXPAR). Results go in 14.8.
+
+### 14.7 What MAGI-1 teaches for D2 (SandAI, "MAGI-1: Autoregressive Video Generation at Scale", 2025; code Apache-2.0)
+
+Read for ideas only (no weights used; weight licence not stated in the README). Their scale (614M VAE, 4.5B/24B
+generator, petabytes of video) is far from ours (~15M generator, under 200 heads): we take designs, not sizes.
+
+| MAGI-1 | Our use | Decision |
+|---|---|---|
+| **Transformer VAE**, not conv: a 3D conv patch embedding (8x8x4, stride = kernel), 24 transformer blocks with QK-norm, LayerNorm + linear to 16 latent channels (mean, log-variance: KL), symmetric decoder ending in pixel shuffle + one 3x3x3 conv. Faster than conv VAEs of similar size on modern GPUs; decode 12 ms per clip | D2 | **D2 becomes a patch transformer VAE first**: 8^3-voxel (8 mm) patches, so its tokens are exactly the flow transformer's tokens and the generator stays unchanged; QK-norm; KL latent; pixel-shuffle head for grids (training, scoring). The VecSet cross-attention point decoder (14.2) is kept as a second head for direct meshes, tested after the grid head works. A whole head is about 2-5k tokens: full attention, no tiling (tiling caused our decode bug) |
+| VAE losses L1 + KL + LPIPS + GAN | D2 losses | soft cross-entropy + KL + the shell loss (our analogue of a perceptual loss). No GAN or LPIPS: they are image measures |
+| **Chunk-wise generation**: each chunk has its own noise level, earlier chunks less noisy; full attention inside a chunk, causal across chunks; clean earlier chunks cached (KV cache), memory constant per chunk | seams between body parts (14.3) | **The seam test's arm (b) uses MAGI's scheme**: body regions as chunks (head, neck, trunk, pelvis, limbs), each region's tokens with their own timestep, block-causal attention across regions, the finished region cached. This replaces separate part models joined afterwards |
+| Clean conditioning chunks get up to 5% noise, no loss on them | partial reveal (4.3) and masked heads | revealed tokens get a little noise during training (against over-trust of given tokens); loss only on tokens being generated. Masked partial heads (SynthRAD) fit the same frame: the measured part is "revealed", the masked face is generated |
+| Image-to-video as continuation with only the first frame clean | partial scans | same idea for dental or cut scans: whatever is measured is given, the rest generated; one model for full and partial inputs |
+| **Shortcut distillation**: one model trained so one large step equals two half steps; 8-64 steps at inference, guidance distilled in | live runtime ([[flesh runtime at minimum compute]]) | after the architecture choice, distil the flow to 1-4 steps for games and VRChat (now 16 Euler steps) |
+| Logit-normal timestep sampling (most compute at low noise); QK-norm; sandwich norm; softcapped adaLN scale | flow transformer (D1 and D2) | adopt QK-norm and logit-normal t in the next phase for both directions (cheap, stabilising). Not in suite1, which keeps conditions fixed |
+| Guidance on the previous chunk (w_prev) and on text, strength by timestep | shell conditioning | test classifier-free guidance on the shell tokens (drop the shell in some training steps) after D1/D2 |
+| MagiAttention for up to 4M tokens | none | not needed: our sequences are thousands of tokens |
