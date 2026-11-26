@@ -38,7 +38,7 @@ def head(c):
     return heads[c]
 net = Flow(66 - 1, C, NC, 384, 8).to(dev); ema = Flow(66 - 1, C, NC, 384, 8).to(dev); ema.load_state_dict(net.state_dict()); ema.eval()
 for p in ema.parameters(): p.requires_grad_(False)
-opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=0.05); sched = torch.optim.lr_scheduler.OneCycleLR(opt, 3e-4, total_steps=STEPS, pct_start=0.05)
+opt = torch.optim.AdamW(net.parameters(), 3e-4, weight_decay=0.05); sched = torch.optim.lr_scheduler.OneCycleLR(opt, 3e-4, total_steps=STEPS, pct_start=max(0.05, 2.5 / STEPS))
 T = lambda a, dt=torch.float32: torch.tensor(np.asarray(a), device=dev, dtype=dt)
 CLS = T(np.ones((1, NC), np.float32))
 def cond(e):
