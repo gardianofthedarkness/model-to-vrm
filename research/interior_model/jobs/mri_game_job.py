@@ -118,6 +118,8 @@ def score(case, P, names):
     return r
 
 if __name__ == '__main__':
+    try: import monai, SimpleITK                                                       # the Colab runner installs only the common packages
+    except ImportError: import subprocess; subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'monai==1.5.1', 'SimpleITK'], check=True)
     from multiprocessing import Pool
     from huggingface_hub import HfApi, hf_hub_download, snapshot_download
     import torch
