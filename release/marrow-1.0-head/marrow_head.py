@@ -150,13 +150,22 @@ def meshes(P, body, mm=1.0):
         out[nm] = (((v - 1 - ctr) * mm).astype(np.float32), f.astype(np.uint32))
     return out
 
+def skin_mesh(labels, F=16):
+    """the input shell's outer surface (where the body ends), in the same mm frame as meshes(); for showing input and output together"""
+    from skimage import measure; from scipy import ndimage as ndi
+    G = [n // F for n in labels.shape]; L = labels[:G[0] * F, :G[1] * F, :G[2] * F]; body = (L != 0) & (L != UNK)
+    v, f, _, _ = measure.marching_cubes(np.pad(ndi.gaussian_filter(body.astype(np.float32), 1.0), 1), 0.5)
+    return ((v - 1 - np.argwhere(body).mean(0)).astype(np.float32), f.astype(np.uint32))
+
 HEAD_TO_GLTF = np.array([[-1, 0, 0], [0, 0, 1], [0, 1, 0]], np.float64)   # head frame (x to the right ear, y forward, z up) -> glTF (+y up, facing +z)
 
-def write_glb(ms, path, max_faces=0):
+def write_glb(ms, path, max_faces=0, skin=None):
     """coloured GLB, one named node per compartment, metres, glTF axes; faces oriented outward; max_faces > 0 decimates
-    each compartment to at most that many faces (needs fast-simplification)"""
+    each compartment to at most that many faces (needs fast-simplification); skin (v, f) adds the input shell as a
+    half-transparent node 'skin_input'"""
     import trimesh
-    sc = trimesh.Scene()
+    sc = trimesh.Scene(); ms = dict(ms)
+    if skin is not None: ms['skin_input'] = skin
     for nm, (v, f) in ms.items():
         if max_faces and len(f) > max_faces:
             import fast_simplification
@@ -165,8 +174,9 @@ def write_glb(ms, path, max_faces=0):
         a, b, c = vv[f[:, 0]], vv[f[:, 1]], vv[f[:, 2]]
         if np.einsum('ij,ij->i', a, np.cross(b, c)).sum() < 0: f = f[:, ::-1]             # negative signed volume: faces point inward
         m = trimesh.Trimesh(vv, f, process=False)
-        c = (np.array(COLOURS[nm]) * 255).astype(np.uint8)
-        m.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(name=nm, baseColorFactor=list(c) + [255], roughnessFactor=0.7))
+        c = (np.array(COLOURS.get(nm, (0.85, 0.80, 0.78))) * 255).astype(np.uint8); sk = nm == 'skin_input'
+        m.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(name=nm, baseColorFactor=list(c) + [90 if sk else 255], roughnessFactor=0.7,
+                                                                                          alphaMode='BLEND' if sk else 'OPAQUE', doubleSided=sk))
         sc.add_geometry(m, node_name=nm, geom_name=nm)
     sc.export(path)
 
@@ -181,4 +191,4 @@ if __name__ == '__main__':
     vols = {NAMES[k]: round(float((lab == k).sum()) / 1000, 1) for k in range(1, len(NAMES))}; print('volumes ml', vols)
     np.savez_compressed(os.path.join(a.out, 'compartments.npz'), labels=lab, probs=P, names=np.array(NAMES))
     json.dump(dict(volumes_ml=vols, seed=a.seed, steps=a.steps), open(os.path.join(a.out, 'volumes.json'), 'w'), indent=1)
-    if a.glb: write_glb(meshes(P, body), os.path.join(a.out, 'compartments.glb'), a.max_faces); print('wrote', os.path.join(a.out, 'compartments.glb'))
+    if a.glb: write_glb(meshes(P, body), os.path.join(a.out, 'compartments.glb'), a.max_faces, skin_mesh(sh['labels'], cfg['token_mm'])); print('wrote', os.path.join(a.out, 'compartments.glb'))

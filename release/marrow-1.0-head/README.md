@@ -17,7 +17,9 @@ pipeline_tag: other
 
 It is the coarse "game" stage of MARROW, a shell-to-interior model in the [model-to-vrm](https://github.com/gardianofthedarkness/model-to-vrm) project. The finer medical stage comes later.
 
-![The elf example in 3D](example/elf_compartments_3d.png)
+![Input shell, generated compartments, and the shell half-transparent over them](example/elf_input_vs_output.png)
+
+*Left: the only input, the closed head shell of our elf character, hair and pointed ears included. Middle: what MARROW-1.0-head generates inside it (the skull drawn at 35% so the brain shows). Right: the shell at 28% opacity over the output. The skull, jaw, teeth, eyes and chewing muscles fit inside her face, while the volume of her hair and ears stays empty.*
 
 ## Compartments
 
@@ -54,7 +56,7 @@ python marrow_head.py example/elf_shell.npz out --glb --max-faces 20000
 The command writes three files:
 - `out/compartments.npz`: `labels` (uint8 compartment ids), `probs` (float16, 14 × X × Y × Z) and `names`.
 - `out/volumes.json`: volume of each compartment in ml.
-- `out/compartments.glb`: one named, coloured mesh per compartment in metres, glTF axes (+Y up, face towards +Z).
+- `out/compartments.glb`: one named, coloured mesh per compartment in metres, glTF axes (+Y up, face towards +Z). It also has a `skin_input` node, the input shell at 35% opacity, so input and output can be viewed together in any glTF viewer or engine.
 
 The elf takes about 4 minutes on a T4 and about 6 minutes on a GTX 1650 (4 GB). It also runs on CPU with `--cpu`, more slowly.
 
@@ -73,7 +75,10 @@ The mesh has no real-world scale, so the head must be sized to real millimetres.
 - `elf_shell.npz`: the input.
 - `elf_out/`: the output, as `compartments.npz`, `volumes.json`, the full-resolution `compartments.glb` and the 20k-face-per-part `compartments_game.glb`.
 - `elf_slices.png`: three slices through the eyes.
-- `elf_compartments_3d.png`: the 3D preview above.
+- `elf_input_vs_output.png`: the picture above, rendered from `compartments_game.glb` with [`render_demo.py`](render_demo.py) in Blender.
+- `elf_compartments_3d.png`: a plain 3D preview of the compartments.
+
+Drop `compartments_game.glb` into any glTF viewer (for example https://gltf-viewer.donmccurdy.com) to turn it around: the half-transparent `skin_input` node shows the shell over the compartments.
 
 ![Elf slices](example/elf_slices.png)
 
