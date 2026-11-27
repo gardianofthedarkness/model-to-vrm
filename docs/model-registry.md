@@ -38,7 +38,7 @@ Storage: private dataset `hanseg-ct-mr` unless noted; `field_exp/<run tag>/...`.
 
 | Code | What | Status |
 |---|---|---|
-| MARROW-S1.1a | S1.0 + decoder fine-tuned on the generator's own codes | after S1.0 |
+| MARROW-S1.1a | S1.0 + decoder fine-tuned on the generator's own codes | **skipped 2026-11-27**: check 0 (`field_exp/marrow_s1_0_t16/gen_gap_NH_s0`, 12 val + 8 train heads) found generated codes on the decoder's code set (nearest-code distance 0.46 vs 0.47 for true codes; round trip 0.40 vs 0.37), so a decoder fine-tune has little to fix. The gap is the generator on unseen heads: train heads skull 0.85 / mandible 0.84 vs val 0.77 / 0.74 (ceiling 0.90); two draws agree (0.87) more than with the truth (0.77) |
 | MARROW-S1.1b | S1.0 encoder, decoder and generator fine-tuned together (KL holds the latent space) | after S1.1a |
 | MARROW-S2.0 | fine stage: refiner inside S1's compartments, continuous CT field targets | after S1 is accepted |
 
