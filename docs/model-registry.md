@@ -27,14 +27,16 @@ Storage: private dataset `hanseg-ct-mr` unless noted; `field_exp/<run tag>/...`.
 | MARROW-S0.2-t8-k10-shell | N + original shell loss ("NS") | as above | + shell loss (wrong target) | 10k | `field_exp/suite2_tvae/NS_s0`, `NS_s1` | discarded: eye 0.08-0.12 |
 | MARROW-S0.2-t8-k10-shellfix | N + fixed shell loss ("NST") | as above | + shell loss at zero on the truth, weighted by noise level | 10k | `field_exp/suite3/NST_s0` | parked: eye 0.74, bone 0.62; fewer fat pieces |
 | MARROW-S0.2-t8-k10-p | N + SynthRAD masked faces ("NSP") | + 85 SynthRAD partial heads | with original shell loss | 10k | `field_exp/suite2_tvae/NSP_s0`, `NSP_s1` | inconclusive (shell loss confounds) |
+| MARROW-VAE-S1.0-t16 | transformer VAE on the 14 S1 compartments | 103 named-label heads (TotalSegmentator 61 + HaN-Seg 42), exact compartment one-hot | patch transformer VAE, 16 mm, KL | 12k | `field_exp/marrow_s1_0_t16/ae_soft` | gate passed: brain 0.99, mandible 0.90, skull 0.89, eyes 0.89, fat layer 0.70 at volume 1.07; weak: tongue 0.37, other bone 0.43; teeth 1.56x and airway 1.49x by volume |
+| MARROW-S1.0-t16-k25 | coarse stage, no hair augmentation | as above | VAE-S1.0-t16 + flow transformer | 25k | `field_exp/marrow_s1_0_t16/N_s0` | 15 test heads: brain 0.96, eyes 0.84, skull 0.78, chewing 0.78/0.77, mandible 0.78, tongue 0.74, other soft 0.70, spine 0.64, fat layer 0.61, airway 0.60, teeth 0.53, other bone 0.16. Colab T4, whole suite 2.9 h |
+| MARROW-S1.0-t16h-k25 | same with hair and cloth shell augmentation (2 variants per train head) | as above | as above | 25k | `field_exp/marrow_s1_0_t16/NH_s0` | 0.01-0.04 below t16-k25 on clean test heads (brain 0.95, eyes 0.81, skull 0.76, tongue 0.74); its benefit shows only on shells with hair (elf) |
 
 ## Planned
 
 | Code | What | Status |
 |---|---|---|
-| MARROW-VAE-S1.0-t16, -t8 | transformer VAE on 14 exact physics compartments | next run |
-| MARROW-S1.0-t16-k25, -t16h-k25 | coarse stage, 16 mm tokens, without / with hair and cloth augmentation | next run (first) |
-| MARROW-S1.0-t8-k25, -t8h-k25 | same at 8 mm | next run (second) |
+| MARROW-VAE-S1.0-t8 | transformer VAE on 14 compartments, 8 mm | next run |
+| MARROW-S1.0-t8-k25, -t8h-k25 | same at 8 mm | next run |
 | MARROW-S1.1a | S1.0 + decoder fine-tuned on the generator's own codes | after S1.0 |
 | MARROW-S1.1b | S1.0 encoder, decoder and generator fine-tuned together (KL holds the latent space) | after S1.1a |
 | MARROW-S2.0 | fine stage: refiner inside S1's compartments, continuous CT field targets | after S1 is accepted |
