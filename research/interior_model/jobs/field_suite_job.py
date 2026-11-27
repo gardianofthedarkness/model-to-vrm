@@ -44,6 +44,16 @@ def gpu_logger():
         except Exception as e: log('gpu log', type(e).__name__)
         time.sleep(int(os.environ.get('GPU_LOG', '300')))
 threading.Thread(target=gpu_logger, daemon=True).start()
+STAGE = ['start']
+def heartbeat():
+    """small status file in the repo every HEARTBEAT s (default 600), so a watcher can tell 'still working' from 'dropped'"""
+    while not stop:
+        try:
+            st = dict(suite=SUITE, stage=STAGE[0], elapsed_s=round(time.time() - t0), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+            api.upload_file(path_or_fileobj=json.dumps(st).encode(), path_in_repo='field_exp/%s/heartbeat.json' % SUITE, repo_id=repo, repo_type='dataset', commit_message='heartbeat ' + SUITE)
+        except Exception as e: log('heartbeat', type(e).__name__)
+        time.sleep(int(os.environ.get('HEARTBEAT', '600')))
+threading.Thread(target=heartbeat, daemon=True).start()
 def parallel(jobs):
     """jobs: list of (name, cmd, env); run all at once, stream lines prefixed by name, return {name: (rc, text)}"""
     res = {}
@@ -79,15 +89,18 @@ if AE_FROM:
     kinds_train = [k for k in kinds if k != 'soft']
 else: kinds_train = kinds
 # 1. autoencoders
+STAGE[0] = 'autoencoder'
 if not REUSE and kinds_train: r = parallel([('ae_' + k, py + ['field_exp.py', fields, AE_STEPS, k, os.path.join(out, 'ae_' + k)], {}) for k in kinds_train])
 if not REUSE and kinds_train:
     for k in kinds_train: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
     up(out, 'field_exp/' + SUITE); log('stage autoencoders done')
     g = parallel([('gate_' + k, py + ['ae_check.py', fields, os.path.join(out, 'ae_' + k, 'gate.json'), os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k)], {'GATE_HEADS': os.environ.get('GATE_HEADS', '4')}) for k in kinds_train])
     log('stage gate done (per-compartment overlap and volume in ae_*/gate.json)')
+STAGE[0] = 'preparation'
 # 2. preparation (all heads, both kinds, SHARDS processes each)
 if not REUSE: r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
 if not REUSE: log('stage preparation done', {k: v[0] for k, v in r.items()})
+STAGE[0] = 'generator'
 # 3. flows
 arm_env = dict(A0=('hard', '0', 'hanseg,pddca', {}), N=('soft', '0', os.environ.get('TRAIN_SOURCES', 'hanseg,pddca'), {}), NS=('soft', SHAPE, 'hanseg,pddca', {}), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad', {}),
                NH=('soft', '0', os.environ.get('TRAIN_SOURCES', 'hanseg,pddca'), {'TRAIN_HAIR': '1'}),   # with hair / cloth variants (prep HAIR)
