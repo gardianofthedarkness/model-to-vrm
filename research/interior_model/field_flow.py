@@ -7,7 +7,7 @@ charged per tissue against the true shares from the CT field (known voxels only)
   position  distance of soft centroids / block     topology  1 - soft clDice (Shit et al. 2021: skeletons by soft erosion)
 Test: Euler sampling (16 steps), decoded probabilities; against the true shares on known voxels: Dice of the argmax per
 tissue, surface distance at the 50% level (dense even sampling), and pieces per tissue (argmax, >= 20 voxels) against truth.
-env: OUT, REPO, SHAPE (weight, 0 = off, auto = shell part equal to the flow loss each step), SHAPE_T (linear: times t), CKPTS (steps also scored), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
+env: OUT, REPO, SHAPE (weight, 0 = off, auto = shell part equal to the flow loss each step), SHAPE_T (linear: times t), SHAPE_REF (decoded: target is the decoded true codes), CKPTS (steps also scored), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
 import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functional as F_
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
@@ -75,7 +75,10 @@ def step_loss(c, t, gen):
         g2 = grid.clone(); g2[:, loc[:, 0], loc[:, 1], loc[:, 2]] = z1h[T(np.flatnonzero(inb), torch.long)].T
         with torch.autocast('cuda', dtype=AMP): P = torch.softmax(ae.decode(g2[None]).float(), 1)
         vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
-        Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
+        if os.environ.get('SHAPE_REF') == 'decoded':                       # target = the decoder's reconstruction of the TRUE codes: zero loss exactly at the truth (user, 2026-11-26)
+            with torch.no_grad(), torch.autocast('cuda', dtype=AMP): Tt = torch.softmax(ae.decode(grid[None]).float(), 1)
+        else: Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None])
+        K = T(~h['unk'][vs])[None, None]
         sl = shape_loss(P, Tt, K)
         if sl is not None:
             w = (loss.detach() / sl.detach().clamp(min=1e-6)) if AUTO else SHAPE   # auto (user, 2026-11-26): the shell part equals the flow loss at every step, no set weight
@@ -91,6 +94,7 @@ def shell_check(n=8):
         a = cand[rng.integers(len(cand))]; b = np.minimum(a + 8, e.G); bx = tuple(slice(x, y) for x, y in zip(a, b)); vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
         with torch.autocast('cuda', dtype=AMP): P = torch.softmax(ae.decode(T(e.code[(slice(None),) + bx])[None]).float(), 1)
         Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
+        if os.environ.get('SHAPE_REF') == 'decoded': Tt = P
         l = shape_loss(P, Tt, K)
         if l is not None: vals.append(l.item())
     return vals

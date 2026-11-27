@@ -85,7 +85,7 @@ if not REUSE: log('stage preparation done', {k: v[0] for k, v in r.items()})
 # 3. flows
 arm_env = dict(A0=('hard', '0', 'hanseg,pddca', {}), N=('soft', '0', 'hanseg,pddca', {}), NS=('soft', SHAPE, 'hanseg,pddca', {}), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad', {}),
                NL=('soft', '0', 'hanseg,pddca', {'STEPS': os.environ.get('NL_STEPS', '30000'), 'CKPTS': os.environ.get('NL_CKPTS', '10000,20000')}),   # N trained longer, scored at checkpoints
-               NST=('soft', SHAPE, 'hanseg,pddca', {'SHAPE_T': 'linear'}),                                     # shell loss weighted by t
+               NST=('soft', SHAPE, 'hanseg,pddca', {'SHAPE_T': 'linear', 'SHAPE_REF': 'decoded'}),           # shell loss weighted by t, against the decoded true codes
                NP=('soft', '0', 'hanseg,pddca,synthrad', {}))                                                  # N + masked partial faces
 jobs = []
 for a in ARMS:
