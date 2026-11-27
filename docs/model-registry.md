@@ -30,13 +30,14 @@ Storage: private dataset `hanseg-ct-mr` unless noted; `field_exp/<run tag>/...`.
 | MARROW-VAE-S1.0-t16 | transformer VAE on the 14 S1 compartments | 103 named-label heads (TotalSegmentator 61 + HaN-Seg 42), exact compartment one-hot | patch transformer VAE, 16 mm, KL | 12k | `field_exp/marrow_s1_0_t16/ae_soft` | gate passed: brain 0.99, mandible 0.90, skull 0.89, eyes 0.89, fat layer 0.70 at volume 1.07; weak: tongue 0.37, other bone 0.43; teeth 1.56x and airway 1.49x by volume |
 | MARROW-S1.0-t16-k25 | coarse stage, no hair augmentation | as above | VAE-S1.0-t16 + flow transformer | 25k | `field_exp/marrow_s1_0_t16/N_s0` | 15 test heads: brain 0.96, eyes 0.84, skull 0.78, chewing 0.78/0.77, mandible 0.78, tongue 0.74, other soft 0.70, spine 0.64, fat layer 0.61, airway 0.60, teeth 0.53, other bone 0.16. Colab T4, whole suite 2.9 h |
 | MARROW-S1.0-t16h-k25 | same with hair and cloth shell augmentation (2 variants per train head) | as above | as above | 25k | `field_exp/marrow_s1_0_t16/NH_s0` | 0.01-0.04 below t16-k25 on clean test heads (brain 0.95, eyes 0.81, skull 0.76, tongue 0.74); its benefit shows only on shells with hair (elf) |
+| MARROW-VAE-S1.0-t8 | transformer VAE on the 14 S1 compartments, 8 mm | as t16 | patch transformer VAE, 8 mm, KL | 12k | `field_exp/marrow_s1_0_t8/ae_soft` | gate better than t16 everywhere: brain 0.99, skull 0.93, chewing 0.92/0.92, mandible 0.92, eyes 0.91, other soft 0.89, spine 0.89, teeth 0.81, fat layer 0.78, airway 0.77, tongue 0.62, other bone 0.56 |
+| MARROW-S1.0-t8-k25 | coarse stage at 8 mm, no hair augmentation | as above | VAE-S1.0-t8 + flow transformer | 25k | `field_exp/marrow_s1_0_t8/N_s0` | 15 test heads: a tie with t16-k25 (brain 0.96, eyes 0.84, chewing 0.79/0.78, skull 0.78, mandible 0.78, other soft 0.71, tongue 0.66, spine 0.64, airway 0.61, fat layer 0.59, teeth 0.52, other bone 0.15); the better VAE does not carry through, the generator is the limit. HF L40S, whole suite 2.2 h |
+| MARROW-S1.0-t8h-k25 | same with hair and cloth augmentation | as above | as above | 25k | `field_exp/marrow_s1_0_t8/NH_s0` | brain 0.95, eyes 0.81, chewing 0.78/0.76, skull 0.77, mandible 0.76, tongue 0.69 (missing on 2 heads), other soft 0.68, airway 0.60, spine 0.59, fat layer 0.57, teeth 0.50 |
 
 ## Planned
 
 | Code | What | Status |
 |---|---|---|
-| MARROW-VAE-S1.0-t8 | transformer VAE on 14 compartments, 8 mm | next run |
-| MARROW-S1.0-t8-k25, -t8h-k25 | same at 8 mm | next run |
 | MARROW-S1.1a | S1.0 + decoder fine-tuned on the generator's own codes | after S1.0 |
 | MARROW-S1.1b | S1.0 encoder, decoder and generator fine-tuned together (KL holds the latent space) | after S1.1a |
 | MARROW-S2.0 | fine stage: refiner inside S1's compartments, continuous CT field targets | after S1 is accepted |
