@@ -1,1 +1,1 @@
-{"note": "Check 0 before MARROW-S1.1a: is the generated-vs-rebuilt gap off-target codes or an open interior? (gen_gap.py on marrow_s1_0_t16 NH_s0; ~30-40 min)", "job": "gen_gap_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"SUITE": "marrow_s1_0_t16", "ARM": "NH_s0", "N_REF": "30", "N_TRAIN": "8", "SHARDS": "2"}}
+{"note": "nothing queued (check 0 for MARROW-S1.1a finished 2026-11-27); this job name does not exist on purpose, so a stale Run all stops at once", "job": "none_queued.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {}}
