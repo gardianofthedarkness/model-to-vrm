@@ -13,15 +13,15 @@ cells = [
 Results are uploaded to the private Hugging Face repo by the job itself, as on Hugging Face Jobs.
 '''),
 ('code', '''
-# ---- the job (same names and settings as research/interior_model/jobs/launch_script.py)
-JOB = 'elf_gen_job.py'              # a script in research/interior_model/jobs/
-REPO_SUFFIX = 'hanseg-ct-mr'         # your private dataset repo (the job's first argument)
-COMMIT = 'main'                      # code version: 'main' or a commit hash
-ENV = {                              # the job's settings (env), as on Hugging Face Jobs
-    'TAG': 'colab_trial',
-    'GENS': 'NL30k=field_exp/suite3/NL_s0/flow.pt',
-    'AE': 'field_exp/ae_check2/tvae_s1/ae_soft.pt',
-}
+# ---- the job. PRESET reads it from notebooks/colab_jobs/<PRESET>.json on GitHub main (Claude sets it there);
+# or set PRESET = None and fill JOB / ENV here by hand (same names and settings as research/interior_model/jobs/launch_script.py)
+PRESET = 'next'
+JOB, REPO_SUFFIX, COMMIT, ENV = 'elf_gen_job.py', 'hanseg-ct-mr', 'main', {}
+if PRESET:
+    import json, urllib.request
+    _p = json.load(urllib.request.urlopen('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/main/notebooks/colab_jobs/%s.json' % PRESET))
+    JOB, REPO_SUFFIX, COMMIT, ENV = _p['job'], _p.get('repo_suffix', REPO_SUFFIX), _p.get('commit', 'main'), _p.get('env', {})
+    print('job', JOB, '| note:', _p.get('note', '')); print('settings', ENV)
 '''),
 ('code', '''
 # ---- setup: GPU, packages, token (from Colab Secrets only), code version
