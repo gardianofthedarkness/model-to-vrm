@@ -5,7 +5,8 @@
 tagging, shell loss, masked partial faces). Stages, each as parallel processes on the same GPU:
   1. autoencoders: hard (old labels) and soft (continuous field), trained on full-face heads (HaN-Seg + PDDCA train)
   2. preparation: codes and shell tokens for every head with each autoencoder (SHARDS processes per kind)
-  3. flows (ARMS): A0 hard; N soft; NS soft + shell loss; NSP soft + shell loss + SynthRAD's masked-face heads
+  3. flows (ARMS): A0 hard; N soft; NS soft + shell loss; NSP soft + shell loss + SynthRAD's masked-face heads;
+     NL N longer (NL_STEPS, scored at NL_CKPTS); NST NS with the shell loss weighted by t; NP N + masked-face heads
 Test heads are full faces only (HaN-Seg and PDDCA test splits). nvidia-smi and free memory are logged every GPU_LOG s.
 Uploads <repo>/field_exp/<SUITE>/... after each stage.
 env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once), AE_FROM (gated soft autoencoder to use).
@@ -82,13 +83,16 @@ if not REUSE and kinds_train:
 if not REUSE: r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
 if not REUSE: log('stage preparation done', {k: v[0] for k, v in r.items()})
 # 3. flows
-arm_env = dict(A0=('hard', '0', 'hanseg,pddca'), N=('soft', '0', 'hanseg,pddca'), NS=('soft', SHAPE, 'hanseg,pddca'), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad'))
+arm_env = dict(A0=('hard', '0', 'hanseg,pddca', {}), N=('soft', '0', 'hanseg,pddca', {}), NS=('soft', SHAPE, 'hanseg,pddca', {}), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad', {}),
+               NL=('soft', '0', 'hanseg,pddca', {'STEPS': os.environ.get('NL_STEPS', '30000'), 'CKPTS': os.environ.get('NL_CKPTS', '10000,20000')}),   # N trained longer, scored at checkpoints
+               NST=('soft', SHAPE, 'hanseg,pddca', {'SHAPE_T': 'linear'}),                                     # shell loss weighted by t
+               NP=('soft', '0', 'hanseg,pddca,synthrad', {}))                                                  # N + masked partial faces
 jobs = []
 for a in ARMS:
-    k, shp, ts = arm_env[a]
+    k, shp, ts, extra = arm_env[a]
     for s in (SEEDS if a != 'A0' else SEEDS[:1]):
         o = os.path.join(out, '%s_s%s' % (a, s)); jobs.append(('%s_s%s' % (a, s), py + ['field_flow.py', fields, os.path.join(out, 'prep_' + k), os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k)],
-                                                         dict(OUT=o, SHAPE=shp, SEED=s, STEPS=STEPS, TRAIN_SOURCES=ts, HEADCACHE='/data/hc')))
+                                                         dict(dict(OUT=o, SHAPE=shp, SEED=s, STEPS=STEPS, TRAIN_SOURCES=ts, HEADCACHE='/data/hc'), **extra)))
 r = parallel(jobs)
 for n, (rc, txt) in r.items(): os.makedirs(os.path.join(out, n), exist_ok=True); open(os.path.join(out, n, 'log.txt'), 'w').write(txt)
 summ = {}

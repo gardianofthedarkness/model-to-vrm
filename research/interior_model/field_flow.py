@@ -7,7 +7,7 @@ charged per tissue against the true shares from the CT field (known voxels only)
   position  distance of soft centroids / block     topology  1 - soft clDice (Shit et al. 2021: skeletons by soft erosion)
 Test: Euler sampling (16 steps), decoded probabilities; against the true shares on known voxels: Dice of the argmax per
 tissue, surface distance at the 50% level (dense even sampling), and pieces per tissue (argmax, >= 20 voxels) against truth.
-env: OUT, REPO, SHAPE (weight, 0 = off, auto = shell part equal to the flow loss each step), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
+env: OUT, REPO, SHAPE (weight, 0 = off, auto = shell part equal to the flow loss each step), SHAPE_T (linear: times t), CKPTS (steps also scored), SEED, STEPS, TRAIN_SOURCES, TEST_SOURCES (field_exp.splits). args: <fields dir> <prep dir> <autoencoder .pt>"""
 import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functional as F_
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
@@ -79,14 +79,30 @@ def step_loss(c, t, gen):
         sl = shape_loss(P, Tt, K)
         if sl is not None:
             w = (loss.detach() / sl.detach().clamp(min=1e-6)) if AUTO else SHAPE   # auto (user, 2026-11-26): the shell part equals the flow loss at every step, no set weight
+            if os.environ.get('SHAPE_T') == 'linear': w = w * t   # weight by how far generation has come (t = 1 clean): blurry early estimates count little (user, 2026-11-26)
             loss = loss + w * sl
     return loss, (sl.item() if sl is not None else float('nan'))
+@torch.no_grad()
+def shell_check(n=8):
+    """shell loss of the decoded TRUE codes on random blocks: what the loss asks for even when the generator is perfect"""
+    vals = []
+    for c in [sp['train'][i] for i in rng.integers(len(sp['train']), size=n)]:
+        e = data[c]; h = head(c); occ = np.zeros(e.G, bool); occ[tuple(e.idx.T)] = True; cand = np.argwhere(occ[:max(1, e.G[0] - 7), :max(1, e.G[1] - 7), :max(1, e.G[2] - 7)])
+        a = cand[rng.integers(len(cand))]; b = np.minimum(a + 8, e.G); bx = tuple(slice(x, y) for x, y in zip(a, b)); vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
+        with torch.autocast('cuda', dtype=AMP): P = torch.softmax(ae.decode(T(e.code[(slice(None),) + bx])[None]).float(), 1)
+        Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
+        l = shape_loss(P, Tt, K)
+        if l is not None: vals.append(l.item())
+    return vals
+if SHAPE > 0: v_ = shell_check(); log('SHELLCHECK shell loss on true codes: mean %.3f min %.3f max %.3f over %d blocks' % (np.mean(v_), np.min(v_), np.max(v_), len(v_)))
+CKPTS = sorted(int(x) for x in os.environ.get('CKPTS', '').split(',') if x); saved = {}
 sc = scaler(); gen = torch.Generator(device=dev); gen.manual_seed(SEED); hist = []; torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
 for it in range(STEPS):
     net.train(); c = sp['train'][rng.integers(len(sp['train']))]; t = float(rng.random())
     loss, sl = step_loss(c, t, gen); opt.zero_grad(); sc.scale(loss).backward(); sc.unscale_(opt); torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); sc.step(opt); sc.update(); sched.step()
     with torch.no_grad():
         for pe_, pn in zip(ema.parameters(), net.parameters()): pe_.mul_(0.999).add_(pn, alpha=0.001)
+    if it + 1 in CKPTS: saved[it + 1] = {k: v.detach().cpu().clone() for k, v in ema.state_dict().items()}; log('checkpoint', it + 1)
     if it % max(1, STEPS // 20) == 0 or it == STEPS - 1: log('step', it, 'loss %.4f shape %.4f' % (loss.item(), sl)); hist.append((it, loss.item(), sl))
 log(profile_line('flow_shape%s' % ('auto' if AUTO else '%g' % SHAPE), t_tr, STEPS)); torch.cuda.reset_peak_memory_stats(); t_te = time.time()
 torch.save(dict(state_dict=ema.state_dict(), mu=mu, sd=sd, shape='auto' if AUTO else SHAPE, seed=SEED), os.path.join(OUT, 'flow.pt'))
@@ -113,24 +129,30 @@ def surf(vol):
     v, f, _, _ = measure.marching_cubes(vol.astype(np.float32), 0.0); t_ = v[f]; ar = 0.5 * np.linalg.norm(np.cross(t_[:, 1] - t_[:, 0], t_[:, 2] - t_[:, 0]), axis=1)
     r = np.random.default_rng(0); k = r.choice(len(f), 200000, p=ar / ar.sum()); u = r.random((200000, 2)); mm = u.sum(1) > 1; u[mm] = 1 - u[mm]
     return t_[k, 0] + u[:, :1] * (t_[k, 1] - t_[k, 0]) + u[:, 1:] * (t_[k, 2] - t_[k, 0])
-res = {}
-for c in sp['test']:
-    e = data[c]; h = head(c); sl = tuple(slice(0, g * F) for g in e.G); known = ~h['unk'][sl]
-    with torch.no_grad(): Tt = torch.cat([shares(T(h['field'][sl][:, :, k0:k0 + 64])[None], (T(h['eye'][sl][:, :, k0:k0 + 64]) / 255)[None], T(h['subcut'][sl][:, :, k0:k0 + 64], torch.bool)[None], T(h['outside'][sl][:, :, k0:k0 + 64], torch.bool)[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
-    P = decode_probs(e, sample(e)); ap, at = P.argmax(0), Tt.argmax(0); r = {}
-    for k in range(1, NC):
-        a_, b_ = (ap == k) & known, (at == k) & known
-        if b_.sum() < 50: continue
-        sp_, st = surf(np.where(known, margin(P, k), -1.0)), surf(np.where(known, margin(Tt, k), -1.0))
-        d = np.concatenate([cKDTree(st).query(sp_, workers=-1)[0], cKDTree(sp_).query(st, workers=-1)[0]]) if len(sp_) and len(st) else np.array([np.nan])
-        npc = lambda m: int(sum(np.bincount(ndi.label(m)[0].ravel())[1:] >= 20))
-        r[NAMES[k]] = dict(dice=round(float(2 * (a_ & b_).sum() / (a_.sum() + b_.sum())), 3), surface_median_mm=round(float(np.nanmedian(d)), 2), surface_p90_mm=round(float(np.nanpercentile(d, 90)), 2),
-                          pieces_model=npc(a_), pieces_true=npc(b_))
-    res[c] = r; log(c, json.dumps(r))
-    np.savez_compressed(os.path.join(OUT, 'pred_%s.npz' % c), labels=ap.astype(np.uint8))
-summ = {}
-for k in NAMES[1:]:
-    rows = [r[k] for r in res.values() if k in r]
-    if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
-json.dump(dict(summary=summ, per_head=res, shape='auto' if AUTO else SHAPE, seed=SEED, steps=STEPS, kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow.json'), 'w'), indent=1)
+def run_test(tag, save_pred):
+    res = {}
+    for c in sp['test']:
+        e = data[c]; h = head(c); sl = tuple(slice(0, g * F) for g in e.G); known = ~h['unk'][sl]
+        with torch.no_grad(): Tt = torch.cat([shares(T(h['field'][sl][:, :, k0:k0 + 64])[None], (T(h['eye'][sl][:, :, k0:k0 + 64]) / 255)[None], T(h['subcut'][sl][:, :, k0:k0 + 64], torch.bool)[None], T(h['outside'][sl][:, :, k0:k0 + 64], torch.bool)[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
+        P = decode_probs(e, sample(e)); ap, at = P.argmax(0), Tt.argmax(0); r = {}
+        for k in range(1, NC):
+            a_, b_ = (ap == k) & known, (at == k) & known
+            if b_.sum() < 50: continue
+            sp_, st = surf(np.where(known, margin(P, k), -1.0)), surf(np.where(known, margin(Tt, k), -1.0))
+            d = np.concatenate([cKDTree(st).query(sp_, workers=-1)[0], cKDTree(sp_).query(st, workers=-1)[0]]) if len(sp_) and len(st) else np.array([np.nan])
+            npc = lambda m: int(sum(np.bincount(ndi.label(m)[0].ravel())[1:] >= 20))
+            r[NAMES[k]] = dict(dice=round(float(2 * (a_ & b_).sum() / (a_.sum() + b_.sum())), 3), surface_median_mm=round(float(np.nanmedian(d)), 2), surface_p90_mm=round(float(np.nanpercentile(d, 90)), 2),
+                              pieces_model=npc(a_), pieces_true=npc(b_))
+        res[c] = r; log(c, json.dumps(r))
+        if save_pred: np.savez_compressed(os.path.join(OUT, 'pred_%s.npz' % c), labels=ap.astype(np.uint8))
+    summ = {}
+    for k in NAMES[1:]:
+        rows = [r[k] for r in res.values() if k in r]
+        if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
+    json.dump(dict(summary=summ, per_head=res, shape='auto' if AUTO else SHAPE, seed=SEED, steps=STEPS if tag == 'final' else int(tag), kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow%s.json' % ('' if tag == 'final' else '_' + tag)), 'w'), indent=1)
+    return summ
+final_state = {k: v.detach().cpu().clone() for k, v in ema.state_dict().items()}
+for st_, sd_ in saved.items():
+    ema.load_state_dict(sd_); log('SUMMARY_%d' % st_, json.dumps(run_test(str(st_), False)))
+ema.load_state_dict(final_state); summ = run_test('final', True)
 log(profile_line('test', t_te, max(1, len(sp['test'])))); log('SUMMARY', json.dumps(summ))
