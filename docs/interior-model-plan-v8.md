@@ -528,3 +528,32 @@ generation, starting from their weights (large domain gap; Hunyuan's licence exc
 speed is not critical; the real-time cost is the physics and motion engine that runs on the generated interior, which
 must be fast. Speed work therefore targets the runtime (a compact interior representation, a fast distilled decoder,
 the flesh simulation itself); step distillation of the generator stays as an option.
+
+### 14.10 Results of the field experiment (2026-11-26)
+
+**suite1 (conv autoencoders):** the soft autoencoder stalled (validation flat for 10,000 of 12,000 steps) and could not
+rebuild eyes or air even from the true input, so N and NS scored 0 on both; A0's hard autoencoder trained. Lesson:
+gate every autoencoder on per-tissue reconstruction before training a generator on it (`ae_check.py`).
+
+**Autoencoder gate (4 validation heads, overlap / median surface mm):** the conv autoencoder stalls at random (3 of 5
+runs, hard and soft alike). The **patch transformer VAE (D2, 14.7)** trained in 3 of 3 runs and beat the best conv one on
+every tissue: eye 0.87-0.89, air 0.79-0.82, thin fat 0.39-0.41 (0.7 mm), fat under the skin 0.78-0.79 (worst 10% 7-9
+mm against 14-17), lean 0.95, bone 0.94 (0.3 mm against 0.7). It is now the tokenizer (field_exp/ae_check2/tvae_s1).
+
+**suite2 (transformer VAE; 14 full-face test heads; overlap, two seeds):**
+
+| Tissue | A0 old input (conv) | **N new input** | NS + shell loss | NSP + masked SynthRAD faces |
+|---|---|---|---|---|
+| Eye | 0.82 | **0.82 / 0.83** | 0.12 / 0.08 | 0.08 / 0.07 |
+| Air | 0.05 | **0.69 / 0.69** (0.5 mm) | 0.27 / 0.26 | 0.19 / 0.21 |
+| Thin fat | 0.06 (3.4 mm) | **0.28 / 0.28** (1.4 mm) | 0.05 / 0.05 | 0.05 / 0.05 |
+| Lean | 0.80 | **0.81 / 0.81** | 0.68 / 0.67 | 0.68 / 0.68 |
+| Bone | 0.69 | **0.70 / 0.70** | 0.42 / 0.41 | 0.42 / 0.40 |
+| Fat under the skin | **0.58** | 0.56 / 0.56 | 0.28 / 0.27 | 0.29 / 0.26 |
+
+Seeds agree within about 0.01. **Decisions:** (1) the new input (continuous field, tissue + eye) with the transformer
+VAE is the base: air and thin fat are many times better, pieces about 40% fewer, eyes equal. (2) The shell loss as
+built hurts badly; suspected causes: applied at every noise level (the one-step estimate is blurry early on), and
+possibly non-zero even for perfect codes (pulling codes off the decoder's space). Next: apply it only near the end of
+the noise schedule and check its value on true codes, as a small test. (3) Masked partial faces changed little next to
+NS (air a little worse, plausibly the masked nasal airway); a fair test adds them to N, without the shell loss.
