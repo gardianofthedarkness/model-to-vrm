@@ -650,3 +650,26 @@ the model as an input, so the detail stage learns Stage 1 at every point of the 
 - **No hand-set level.** The condition noise level at use time is chosen on validation heads.
 - **Same rule elsewhere.** Region-by-region whole-body generation (head, neck, trunk; the seam test, 14.3) and the teeth
   stage (teeth placed inside the generated jaw, ToothFairy3 adults, in the mandible's frame) are built the same way.
+
+### 14.14 Clothing augmentation by cloth simulation (user idea, 2026-11-27; saved for the full-body stage)
+
+Hair augmentation (random extra shell whose inside stays outside) made the model leave hair empty. Clothing goes further:
+a garment draped by physics carries information about the body under it (a shirt over the bust, trousers over the hips),
+and the exposed parts (face, neck, hands) still show the body directly. Planned for the full-body training, not now.
+- **One model**, clothing as augmentation, plus a per-voxel cloth mask input given half the time in training (mask
+  dropout). Our character pipeline usually knows which shell parts are garments (segmentation, colour), so at use time
+  the mask is mostly available; with dropout the same model also works without it.
+- **Garments from an existing tool:** GarmentCode (sewing patterns sized from body measurements, draped with NVIDIA Warp)
+  first; Blender's cloth solver (headless bpy) as fallback. Garment type, looseness, length, thickness and stiffness drawn
+  from the tool's own ranges, not hand-set.
+- **Drape on every training body** (HF CPU jobs): skin surface from each CT/MRI body's labels; gravity as standing.
+  Output: the cloth volume (outside, interior targets unchanged) and the cloth mask.
+- **Garments:** head and neck: collars, turtlenecks, scarves, hoods, hats; body: shirts, jackets, dresses, skirts,
+  trousers, swimwear.
+- **Facts:** the generator's age and sex inputs (unused so far) filled where known (IXI, TotalSegmentator), with dropout,
+  so exposed parts plus age can inform leanness.
+- **Gate:** no loss on clean test bodies; held-out bodies with simulated clothes close to their unclothed truth; the elf
+  (shell / output / overlay picture).
+- **Known gap:** CT and MRI people lie on their backs, so soft tissue under gravity (bust, belly) is shaped lying down.
+  Cloth can be draped standing, but the flesh under it is not. Small for the head, large for the trunk; the full-body
+  stage needs a pose or gravity input, or standing-scan data.
