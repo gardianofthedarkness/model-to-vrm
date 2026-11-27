@@ -460,7 +460,7 @@ A0 old hard labels; N new continuous field, tissue + eye; NS N + shell loss (sof
 the decoded one-step estimate, weight set each step so the shell part equals the flow loss: no set number); NSP NS + 85
 SynthRAD heads with the masked face unknown. Seeds 0 and 1 for N, NS, NSP. NSP ran out of GPU memory beside the other
 five (full-size runs peak at 6-9 GB, not the smoke test's 3-4) and runs as a follow-up reusing the same autoencoders
-and preparation. Lesson: cap processes per card by measured peak memory (MAXPAR). Results go in 14.9.
+and preparation. Lesson: cap processes per card by measured peak memory (MAXPAR). Results go in 14.10.
 
 ### 14.7 What MAGI-1 teaches for D2 (SandAI, "MAGI-1: Autoregressive Video Generation at Scale", 2025; code Apache-2.0)
 
@@ -493,3 +493,38 @@ What changed from MAGI-1, and what we take:
 | **Muon-type optimizer** (MagiMuon, orthogonalised per head/expert matrix; Adam for small parameters) | training speed | cheap test: Muon vs AdamW on the transformer VAE and the flow, same steps, gate and test scores |
 | Deterministic-kernel switch (bit-exact runs) | seed tests | make runs reproducible where cheap (fixed seeds already; deterministic attention optional) |
 | Multi-shot identity consistency, reported qualitatively only | none yet | no evidence to use |
+
+### 14.9 What the newest 3D generators teach (survey 2026-11-26)
+
+Sources: Hunyuan3D 2.0/2.1 (arXiv 2501.12202, 2506.15442), LATTICE / Hunyuan3D 3.0 (2512.03052), Hunyuan3D-Omni
+(2509.21245), UltraShape 1.0 (2512.21185), TRELLIS.2 (2512.14692), TripoSG (2502.06608), Step1X-3D (2505.07747),
+Direct3D-S2 (2505.17412), Seed3D 1.0/2.0 (2510.19944, 2605.13862), SAM 3D Objects (2511.16624), DeepMesh (2503.15265),
+online RL for 3D flow models (2610.01233). Loss weights and schedules partly unstated in the sources.
+
+**The paradigm:** a VAE turns shapes into tokens and a flow-matching (rectified-flow) transformer generates them; ours
+has the same shape. In 2025 set latents (VecSet: tokens decoded by querying any point) and sparse-voxel latents
+competed; by 2026 they merged into set tokens anchored to a coarse voxel grid (LATTICE, UltraShape, Seed3D 2.0), which
+our 8 mm patch tokens already are. Nearly all generate coarse first, then refine near surfaces. Standard recipe: token
+or resolution curriculum, condition dropout about 10% (guidance), logit-normal timesteps, a last fine-tune on the
+cleanest data, guidance and step distillation, and lately reward or preference post-training.
+
+**Decisions, in order of expected value:**
+1. **Point-query decoder** for the transformer VAE: any (x, y, z) -> tissue probabilities by cross-attention to nearby
+   tokens, trained on points sampled densely near tissue boundaries and jittered inside cells. Smooth surfaces at any
+   resolution (the probability-surface view, 14.1), no 8 mm block edges. Replaces the pixel-shuffle head after a gate
+   comparison.
+2. **Signed distance per tissue** as a target beside the shares (TripoSG: SDF + normal + small eikonal + small KL),
+   for sharp fascia and fat boundaries.
+3. **Refiner** near boundaries (Seed3D 2.0, UltraShape; 14.8): trained on noised true coarse codes so it tolerates the
+   generator's errors.
+4. **Cheap changes:** logit-normal timesteps, condition dropout and guidance on the shell, shell as points with normals
+   and a type embedding (Hunyuan3D-Omni), token curriculum.
+5. **Later, reward post-training** for anatomical plausibility (punishing clearly inhuman predictions, a standing rule)
+   once the base model is stable.
+Not for us: billion-parameter models, mixture of experts, millions of assets, image conditioning, textures, mesh-token
+generation, starting from their weights (large domain gap; Hunyuan's licence excludes the EU, UK and South Korea).
+
+**Speed (user, 2026-11-26):** distillation stays in the plan. An interior is generated once per asset, so generator
+speed is not critical; the real-time cost is the physics and motion engine that runs on the generated interior, which
+must be fast. Speed work therefore targets the runtime (a compact interior representation, a fast distilled decoder,
+the flesh simulation itself); step distillation of the generator stays as an option.
