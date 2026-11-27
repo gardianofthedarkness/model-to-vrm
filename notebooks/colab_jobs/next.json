@@ -1,1 +1,1 @@
-{"note": "IXI step 1 FULL: MRI-to-compartment labeller on all 42 HaN-Seg people, 5 folds + one model on all, 4000 steps each (~2 h on L4). Gate per compartment in mri_game/mri_game.json", "job": "mri_game_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"STEPS": "4000"}}
+{"note": "IXI step 1 pictures (PRIVATE): 4 held-out HaN-Seg people (MRI | CT truth | MRI-only prediction) and 8 IXI subjects (MRI | prediction), ~10 min", "job": "mri_game_pics_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"N": "4"}}
