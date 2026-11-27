@@ -1,1 +1,1 @@
-{"note": "IXI step 1 SMOKE: MRI-to-compartment labeller on 5 HaN-Seg people, 60 steps per fold (plumbing check, ~10 min)", "job": "mri_game_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"LIMIT": "5", "STEPS": "60"}}
+{"note": "IXI step 1 FULL: MRI-to-compartment labeller on all 42 HaN-Seg people, 5 folds + one model on all, 4000 steps each (~2 h on L4). Gate per compartment in mri_game/mri_game.json", "job": "mri_game_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"STEPS": "4000"}}
