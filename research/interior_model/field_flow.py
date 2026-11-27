@@ -57,9 +57,9 @@ def shape_loss(P, Tt, K):
     for k in range(1, NC):
         p, t = P[0, k], Tt[0, k]; vt = t.sum()
         if vt < 50: continue
-        vp = p.sum(); dice = 1 - (2 * (p * t).sum() + 1) / (vp + vt + 1); size = (vp - vt).abs() / vt
+        vp = p.sum(); dice = 1 - (2 * torch.minimum(p, t).sum() + 1) / (vp + vt + 1); size = (vp - vt).abs() / vt   # fuzzy (min) overlap: exactly 0 when p equals t (the product form is not, for soft maps)
         cp = (g * p).sum((1, 2, 3)) / (vp + 1e-3); ct = (g * t).sum((1, 2, 3)) / vt; pos = torch.linalg.norm(cp - ct) / S
-        sp_, st = soft_skel(p[None, None]), soft_skel(t[None, None]); tprec = ((sp_ * t).sum() + 1) / (sp_.sum() + 1); tsens = ((st * p).sum() + 1) / (st.sum() + 1)
+        sp_, st = soft_skel(p[None, None]), soft_skel(t[None, None]); tprec = (torch.minimum(sp_, t).sum() + 1) / (sp_.sum() + 1); tsens = (torch.minimum(st, p).sum() + 1) / (st.sum() + 1)   # fuzzy clDice, 0 at equality
         terms.append(dice + size + pos + (1 - 2 * tprec * tsens / (tprec + tsens)))
     return torch.stack(terms).mean() if terms else None
 def step_loss(c, t, gen):
