@@ -12,16 +12,18 @@ import os, sys, shutil, json, time, math, numpy as np, torch, torch.nn.functiona
 from scipy import ndimage as ndi
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from field_exp import AMP, scaler, cached_head, load_head, splits, shares, make_ae, NC, NAMES, log, profile_line
+from field_exp import AMP, scaler, cached_head, load_head, splits, make_targets, make_ae, NC, NAMES, CLASSES, log, profile_line
 from flow_f1 import Flow
 from transformer_smoke import tiles
 root, prep, aef = sys.argv[1:4]; dev = 'cuda'; OUT = os.environ.get('OUT', 'field_flow'); os.makedirs(OUT, exist_ok=True)
 STEPS = int(os.environ.get('STEPS', '10000')); AUTO = os.environ.get('SHAPE', '0') == 'auto'; SHAPE = 1.0 if AUTO else float(os.environ.get('SHAPE', '0')); SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED); rng = np.random.default_rng(SEED)
 idx = json.load(open(os.path.join(root, 'index.json'))); sp = splits(idx, lambda c: os.path.exists(os.path.join(prep, c + '.npz')))
 if os.environ.get('TEST_LIMIT'): sp['test'] = sp['test'][:int(os.environ['TEST_LIMIT'])]
-ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft'), arch=ck.get('arch', 'conv')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
+ck = torch.load(aef, map_location=dev, weights_only=False); F = int(ck.get('F', 8)); ae = make_ae(F=F, soft=(ck['kind'] == 'soft'), arch=ck.get('arch', 'conv')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
 for p in ae.parameters(): p.requires_grad_(False)
-F = 8; C = 8
+C = 8
+if os.environ.get('TRAIN_HAIR') == '1':                                                # hair / cloth variants of the training heads (field_prep HAIR)
+    sp['train'] = sp['train'] + sorted(f[:-4] for f in os.listdir(prep) if '~hair' in f and f.split('~')[0] in set(sp['train']))
 class Ent: pass
 data = {}
 for s, cs in sp.items():
@@ -34,7 +36,8 @@ for e in data.values(): e.z = ((e.raw - mu) / sd).astype(np.float32)
 log({s: len(v) for s, v in sp.items()}, 'shape weight', SHAPE, 'seed', SEED, 'autoencoder', ck['kind'])
 heads = {}
 def head(c):
-    if c not in heads: heads[c] = cached_head(root, c, idx['eye_id'])
+    c = c.split('~')[0]                                                                # a hair variant shares its head's interior
+    if c not in heads: heads[c] = cached_head(root, c, idx.get('eye_id'))
     return heads[c]
 net = Flow(66 - 1, C, NC, 384, 8).to(dev); ema = Flow(66 - 1, C, NC, 384, 8).to(dev); ema.load_state_dict(net.state_dict()); ema.eval()
 for p in ema.parameters(): p.requires_grad_(False)
@@ -77,7 +80,7 @@ def step_loss(c, t, gen):
         vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
         if os.environ.get('SHAPE_REF') == 'decoded':                       # target = the decoder's reconstruction of the TRUE codes: zero loss exactly at the truth (user, 2026-11-26)
             with torch.no_grad(), torch.autocast('cuda', dtype=AMP): Tt = torch.softmax(ae.decode(grid[None]).float(), 1)
-        else: Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None])
+        else: Tt = make_targets(lambda k: T(h[k][vs])[None])
         K = T(~h['unk'][vs])[None, None]
         sl = shape_loss(P, Tt, K)
         if sl is not None:
@@ -93,7 +96,7 @@ def shell_check(n=8):
         e = data[c]; h = head(c); occ = np.zeros(e.G, bool); occ[tuple(e.idx.T)] = True; cand = np.argwhere(occ[:max(1, e.G[0] - 7), :max(1, e.G[1] - 7), :max(1, e.G[2] - 7)])
         a = cand[rng.integers(len(cand))]; b = np.minimum(a + 8, e.G); bx = tuple(slice(x, y) for x, y in zip(a, b)); vs = tuple(slice(x * F, y * F) for x, y in zip(a, b))
         with torch.autocast('cuda', dtype=AMP): P = torch.softmax(ae.decode(T(e.code[(slice(None),) + bx])[None]).float(), 1)
-        Tt = shares(T(h['field'][vs])[None], (T(h['eye'][vs]) / 255)[None], T(h['subcut'][vs], torch.bool)[None], T(h['outside'][vs], torch.bool)[None]); K = T(~h['unk'][vs])[None, None]
+        Tt = make_targets(lambda k: T(h[k][vs])[None]); K = T(~h['unk'][vs])[None, None]
         if os.environ.get('SHAPE_REF') == 'decoded': Tt = P
         l = shape_loss(P, Tt, K)
         if l is not None: vals.append(l.item())
@@ -137,7 +140,7 @@ def run_test(tag, save_pred):
     res = {}
     for c in sp['test']:
         e = data[c]; h = head(c); sl = tuple(slice(0, g * F) for g in e.G); known = ~h['unk'][sl]
-        with torch.no_grad(): Tt = torch.cat([shares(T(h['field'][sl][:, :, k0:k0 + 64])[None], (T(h['eye'][sl][:, :, k0:k0 + 64]) / 255)[None], T(h['subcut'][sl][:, :, k0:k0 + 64], torch.bool)[None], T(h['outside'][sl][:, :, k0:k0 + 64], torch.bool)[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
+        with torch.no_grad(): Tt = torch.cat([make_targets(lambda k, k0=k0: T(h[k][sl][:, :, k0:k0 + 64])[None]).cpu() for k0 in range(0, e.G[2] * F, 64)], 4)[0].numpy()
         P = decode_probs(e, sample(e)); ap, at = P.argmax(0), Tt.argmax(0); r = {}
         for k in range(1, NC):
             a_, b_ = (ap == k) & known, (at == k) & known
@@ -146,13 +149,14 @@ def run_test(tag, save_pred):
             d = np.concatenate([cKDTree(st).query(sp_, workers=-1)[0], cKDTree(sp_).query(st, workers=-1)[0]]) if len(sp_) and len(st) else np.array([np.nan])
             npc = lambda m: int(sum(np.bincount(ndi.label(m)[0].ravel())[1:] >= 20))
             r[NAMES[k]] = dict(dice=round(float(2 * (a_ & b_).sum() / (a_.sum() + b_.sum())), 3), surface_median_mm=round(float(np.nanmedian(d)), 2), surface_p90_mm=round(float(np.nanpercentile(d, 90)), 2),
-                              pieces_model=npc(a_), pieces_true=npc(b_))
+                              pieces_model=npc(a_), pieces_true=npc(b_), volume_ratio=round(float(a_.sum() / max(1, b_.sum())), 3),
+                              centre_mm=round(float(np.linalg.norm(np.argwhere(a_).mean(0) - np.argwhere(b_).mean(0))) if a_.any() else float('nan'), 2))
         res[c] = r; log(c, json.dumps(r))
         if save_pred: np.savez_compressed(os.path.join(OUT, 'pred_%s.npz' % c), labels=ap.astype(np.uint8))
     summ = {}
     for k in NAMES[1:]:
         rows = [r[k] for r in res.values() if k in r]
-        if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
+        if rows: summ[k] = {m: round(float(np.median([x[m] for x in rows])), 3) for m in ('dice', 'surface_median_mm', 'surface_p90_mm', 'volume_ratio', 'centre_mm')} | dict(pieces_error=round(float(np.median([abs(x['pieces_model'] - x['pieces_true']) for x in rows])), 1), heads=len(rows))
     json.dump(dict(summary=summ, per_head=res, shape='auto' if AUTO else SHAPE, seed=SEED, steps=STEPS if tag == 'final' else int(tag), kind=ck['kind'], hist=hist), open(os.path.join(OUT, 'field_flow%s.json' % ('' if tag == 'final' else '_' + tag)), 'w'), indent=1)
     return summ
 final_state = {k: v.detach().cpu().clone() for k, v in ema.state_dict().items()}

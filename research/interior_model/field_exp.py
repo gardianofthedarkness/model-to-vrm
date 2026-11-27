@@ -10,6 +10,12 @@ import os, sys, json, time, math, numpy as np, torch, torch.nn as nn, torch.nn.f
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from face_compress import ChanNorm
 NC = 7; NAMES = ['outside', 'fat_under_skin', 'fat_other', 'lean', 'air', 'bone', 'eye']; UNK = 255
+# CLASSES=game: Stage 1 named physics compartments (game.py) instead of tissue types; TOK: token size in mm (8 or 16), the
+# autoencoder's coarseness (user, 2026-11-27: identity at the data level, coarseness at the autoencoder, robustness in the generator)
+CLASSES = os.environ.get('CLASSES', 'tissue'); TOK = int(os.environ.get('TOK', '8'))
+if CLASSES == 'game':
+    from game import GNAMES, GNC, load_game_head, game_targets
+    NC = GNC; NAMES = GNAMES
 # autocast type: bfloat16 where the card has it (Ampere and newer), else float16 with a gradient scaler (T4, user 2026-11-26)
 AMP = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8) else torch.float16
 def scaler(): return torch.amp.GradScaler('cuda', enabled=(AMP == torch.float16))
@@ -35,18 +41,20 @@ def splits(idx, have=lambda c: True):
     return sp
 
 def load_head(path):
+    if CLASSES == 'game': return load_game_head(path)
     z = np.load(path); shape = tuple(z['shape']); n = int(np.prod(shape))
     unpack = lambda k: np.unpackbits(z[k])[:n].reshape(shape).astype(bool)
     hard = z['hard']; unk = unpack('unk') | (hard == 255)   # old-label unknown is unknown: the scan-edge band (half a voxel at the field-of-view boundary) read as -1000 HU air otherwise (found 2026-11-27)
     return dict(field=z['field'].astype(np.float32), eye=z['eye'].astype(np.float32) / 255.0, subcut=unpack('subcut'), unk=unk, hard=hard, shape=shape)
 
 def hard_classes(hard, eye_id):
-    """old labels -> the seven classes (unknown 255 kept)"""
+    """old labels -> the seven classes (unknown 255 kept); compartments are already classes"""
+    if CLASSES == 'game': return np.asarray(hard)
     out = np.full(hard.shape, UNK, np.uint8); m = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, eye_id: 6}
     for k, v in m.items(): out[hard == k] = v
     return out
 
-CACHE_KEYS = ('field', 'eye', 'subcut', 'unk', 'outside', 'cls')
+CACHE_KEYS = ('field', 'eye', 'subcut', 'unk', 'outside', 'cls') if CLASSES != 'game' else ('unk', 'outside', 'cls')
 def cached_head(root, c, eye_id):
     """a head's arrays memory-mapped from a decompressed cache on disk (HEADCACHE, default <fields>/../hc), written once and
     shared by every process on the card, so RAM stays small however many runs share it. field float16, eye 0-255, cls the
@@ -55,7 +63,8 @@ def cached_head(root, c, eye_id):
     d = os.path.join(os.environ.get('HEADCACHE') or os.path.join(os.path.dirname(os.path.abspath(root)), 'hc'), c)
     if not os.path.exists(os.path.join(d, 'done')):
         h = load_head(os.path.join(root, c + '.npz')); tmp = '%s.tmp%d' % (d, os.getpid()); os.makedirs(tmp, exist_ok=True)
-        arrs = dict(field=h['field'].astype(np.float16), eye=np.round(h['eye'] * 255).astype(np.uint8), subcut=h['subcut'], unk=h['unk'], outside=h['hard'] == 0, cls=hard_classes(h['hard'], eye_id))
+        arrs = dict(unk=h['unk'], outside=h['hard'] == 0, cls=hard_classes(h['hard'], eye_id))
+        if CLASSES != 'game': arrs.update(field=h['field'].astype(np.float16), eye=np.round(h['eye'] * 255).astype(np.uint8), subcut=h['subcut'])
         for k in CACHE_KEYS: np.save(os.path.join(tmp, k + '.npy'), arrs[k])
         open(os.path.join(tmp, 'done'), 'w').close(); del h, arrs
         try: os.rename(tmp, d)
@@ -75,8 +84,14 @@ def shares(field, eye, subcut, outside, up=2):
     out[:, 1:6] = out[:, 1:6] * inside * (1 - e); out[:, 6:7] = e * inside
     return out / out.sum(1, keepdim=True).clamp(min=1e-6)
 
-def make_ae(F=8, C=8, w=32, soft=True, arch=None):
-    arch = arch or os.environ.get('ARCH', 'conv')
+def make_targets(get):
+    """training / scoring targets for a block: get(key) returns a (B, X, Y, Z) tensor. Tissue: shares from the field; game: exact one-hot"""
+    if CLASSES == 'game': return game_targets(get('cls'))
+    e = get('eye'); e = e.float() / 255 if e.dtype == torch.uint8 else e.float()
+    return shares(get('field').float(), e, get('subcut').bool(), get('outside').bool())
+
+def make_ae(F=None, C=8, w=32, soft=True, arch=None):
+    arch = arch or os.environ.get('ARCH', 'conv'); F = F or TOK
     if arch == 'tvae':                                                   # direction D2 (tvae.py)
         from tvae import TVAE
         return TVAE(NC, C=C, P=F, soft=soft)
@@ -108,17 +123,17 @@ def soft_ce(logits, target, known, w):
 
 if __name__ == '__main__':
     root, steps, kind, out = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]; os.makedirs(out, exist_ok=True); dev = 'cuda'
-    idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx['eye_id']
+    idx = json.load(open(os.path.join(root, 'index.json'))); eye_id = idx.get('eye_id')
     sp = splits(idx)
     log({s: len(v) for s, v in sp.items()}, kind)
     H = {c: cached_head(root, c, eye_id) for c in sp['train'] + sp['val']}                # memory-mapped, shared across processes
-    KS = ('field', 'eye', 'subcut', 'outside', 'unk') if kind == 'soft' else ('outside', 'unk', 'cls')
+    KS = ('outside', 'unk', 'cls') if (kind != 'soft' or CLASSES == 'game') else ('field', 'eye', 'subcut', 'outside', 'unk')
     SEED = int(os.environ.get('SEED', '0')); torch.manual_seed(SEED)
-    S = 64; rng = np.random.default_rng(SEED); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
+    S = 8 * TOK; rng = np.random.default_rng(SEED); BI = {c: np.argwhere(~h['outside'][::4, ::4, ::4] & ~h['unk'][::4, ::4, ::4]) * 4 for c, h in H.items()}
     def crop(cs, n):
         out = {k: [] for k in KS}
         for _ in range(n):
-            c = cs[rng.integers(len(cs))]; h = H[c]; q = BI[c][rng.integers(len(BI[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, h['field'].shape)]
+            c = cs[rng.integers(len(cs))]; h = H[c]; q = BI[c][rng.integers(len(BI[c]))]; o = [int(np.clip(a - S // 2, 0, max(0, d - S))) for a, d in zip(q, h['unk'].shape)]
             sl = tuple(slice(a, a + S) for a in o)
             for k in out: out[k].append(np.pad(h[k][sl], [(0, S - x) for x in h[k][sl].shape], constant_values={'field': -1000, 'eye': 0, 'subcut': 0, 'outside': 1, 'unk': 1, 'cls': UNK}[k]))
         return {k: torch.tensor(np.stack(v), device=dev) for k, v in out.items()}
@@ -132,7 +147,7 @@ if __name__ == '__main__':
     else: sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     def batch_targets(b):
         known = (~b['unk']).float()
-        if kind == 'soft': tgt = shares(b['field'].float(), b['eye'].float() / 255, b['subcut'], b['outside']); x = tgt
+        if kind == 'soft': tgt = make_targets(lambda k: b[k]); x = tgt
         else: c = b['cls'].long(); tgt = F_.one_hot(c.clamp(max=NC - 1), NC).permute(0, 4, 1, 2, 3).float(); known = known * (c != UNK).float(); x = c.clamp(max=NC)
         return x, tgt, known
     val = [crop(sp['val'], 2) for _ in range(6)]; best = (1e9, None, 0); torch.cuda.reset_peak_memory_stats(); t_tr = time.time()
@@ -147,4 +162,4 @@ if __name__ == '__main__':
             if vl < best[0]: best = (vl, {k: v.detach().clone() for k, v in net.state_dict().items()}, it)
             log('step', it, 'train %.4f val %.4f' % (loss.item(), vl))
     log(profile_line('ae_' + kind, t_tr, steps))
-    torch.save(dict(state_dict=best[1], kind=kind, arch=ARCH, klw=KLW, warmup=os.environ.get('WARMUP'), soft_in=os.environ.get('SOFT_IN'), F=8, C=8, classes=NC, names=NAMES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])
+    torch.save(dict(state_dict=best[1], kind=kind, arch=ARCH, klw=KLW, warmup=os.environ.get('WARMUP'), soft_in=os.environ.get('SOFT_IN'), F=TOK, C=8, classes=NC, names=NAMES, class_set=CLASSES, best_step=best[2]), os.path.join(out, 'ae_%s.pt' % kind)); log('SUMMARY saved', kind, 'best step', best[2])

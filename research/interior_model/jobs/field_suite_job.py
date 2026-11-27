@@ -9,7 +9,7 @@ tagging, shell loss, masked partial faces). Stages, each as parallel processes o
      NL N longer (NL_STEPS, scored at NL_CKPTS); NST NS with the shell loss weighted by t; NP N + masked-face heads
 Test heads are full faces only (HaN-Seg and PDDCA test splits). nvidia-smi and free memory are logged every GPU_LOG s.
 Uploads <repo>/field_exp/<SUITE>/... after each stage.
-env: COMMIT, SUITE, FIELDS, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once), AE_FROM (gated soft autoencoder to use).
+env: COMMIT, SUITE, FIELDS, CLASSES (game: Stage 1 compartments, FIELDS names the folder), TOK, HAIR (prep variants), ARCH, WARMUP, AE_STEPS, STEPS, SHAPE, SEEDS (e.g. 0,1), ARMS (comma: A0,N,NS,NSP), SHARDS, TEST_LIMIT, LIMIT_HEADS, REUSE (earlier suite: flows only), MAXPAR (processes at once), AE_FROM (gated soft autoencoder to use).
 args: <repo>"""
 import os, sys, time, json, subprocess, threading, urllib.request
 from huggingface_hub import HfApi, snapshot_download
@@ -19,9 +19,13 @@ api = HfApi(); repo = sys.argv[1]; C = os.environ['COMMIT']; SUITE = os.environ.
 AE_STEPS = os.environ.get('AE_STEPS', '12000'); STEPS = os.environ.get('STEPS', '10000'); SHAPE = os.environ.get('SHAPE', '0.2')
 SEEDS = os.environ.get('SEEDS', '0,1').split(','); ARMS = os.environ.get('ARMS', 'A0,N,NS,NSP').split(','); SHARDS = int(os.environ.get('SHARDS', '2'))
 ROOT = '/data/fx'; os.makedirs('code', exist_ok=True)
-for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'field_prep.py', 'field_flow.py', 'tvae.py'):
+for f in ('face_compress.py', 'transformer_smoke.py', 'flow_f1.py', 'field_exp.py', 'field_prep.py', 'field_flow.py', 'tvae.py', 'game.py', 'ae_check.py'):
     urllib.request.urlretrieve('https://raw.githubusercontent.com/gardianofthedarkness/model-to-vrm/%s/research/interior_model/%s' % (C, f), os.path.join('code', f))
-snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['%s/*' % FIELDS])
+GAME = os.environ.get('CLASSES') == 'game'
+if GAME:                                                                                # Stage 1: the 103 named-label heads (game.assemble)
+    sys.path.insert(0, 'code'); import game; game.assemble(os.path.join(ROOT, FIELDS))
+    os.environ.setdefault('TRAIN_SOURCES', 'ts,hanseg'); os.environ.setdefault('TEST_SOURCES', 'ts,hanseg')
+else: snapshot_download(repo, repo_type='dataset', local_dir=ROOT, max_workers=16, allow_patterns=['%s/*' % FIELDS])
 fields = os.path.join(ROOT, FIELDS); out = os.path.join(ROOT, 'field_exp', SUITE); os.makedirs(out, exist_ok=True)
 if os.environ.get('LIMIT_HEADS'):                                                       # smoke: a few heads per source and split
     idx = json.load(open(os.path.join(fields, 'index.json'))); n = int(os.environ['LIMIT_HEADS']); keep = {}
@@ -79,11 +83,14 @@ if not REUSE and kinds_train: r = parallel([('ae_' + k, py + ['field_exp.py', fi
 if not REUSE and kinds_train:
     for k in kinds_train: open(os.path.join(out, 'ae_' + k, 'log.txt'), 'w').write(r['ae_' + k][1])
     up(out, 'field_exp/' + SUITE); log('stage autoencoders done')
+    g = parallel([('gate_' + k, py + ['ae_check.py', fields, os.path.join(out, 'ae_' + k, 'gate.json'), os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k)], {'GATE_HEADS': os.environ.get('GATE_HEADS', '4')}) for k in kinds_train])
+    log('stage gate done (per-compartment overlap and volume in ae_*/gate.json)')
 # 2. preparation (all heads, both kinds, SHARDS processes each)
 if not REUSE: r = parallel([('prep_%s_%d' % (k, i), py + ['field_prep.py', fields, os.path.join(out, 'ae_' + k, 'ae_%s.pt' % k), os.path.join(out, 'prep_' + k)], {'SHARD': '%d/%d' % (i, SHARDS)}) for k in kinds for i in range(SHARDS)])
 if not REUSE: log('stage preparation done', {k: v[0] for k, v in r.items()})
 # 3. flows
-arm_env = dict(A0=('hard', '0', 'hanseg,pddca', {}), N=('soft', '0', 'hanseg,pddca', {}), NS=('soft', SHAPE, 'hanseg,pddca', {}), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad', {}),
+arm_env = dict(A0=('hard', '0', 'hanseg,pddca', {}), N=('soft', '0', os.environ.get('TRAIN_SOURCES', 'hanseg,pddca'), {}), NS=('soft', SHAPE, 'hanseg,pddca', {}), NSP=('soft', SHAPE, 'hanseg,pddca,synthrad', {}),
+               NH=('soft', '0', os.environ.get('TRAIN_SOURCES', 'hanseg,pddca'), {'TRAIN_HAIR': '1'}),   # with hair / cloth variants (prep HAIR)
                NL=('soft', '0', 'hanseg,pddca', {'STEPS': os.environ.get('NL_STEPS', '30000'), 'CKPTS': os.environ.get('NL_CKPTS', '10000,20000')}),   # N trained longer, scored at checkpoints
                NST=('soft', SHAPE, 'hanseg,pddca', {'SHAPE_T': 'linear', 'SHAPE_REF': 'decoded'}),           # shell loss weighted by t, against the decoded true codes
                NP=('soft', '0', 'hanseg,pddca,synthrad', {}))                                                  # N + masked partial faces
