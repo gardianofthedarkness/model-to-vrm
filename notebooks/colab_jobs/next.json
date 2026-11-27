@@ -1,4 +1,4 @@
-{"note": "MARROW-S1.0 check: 16 mm tokens, tiny steps, with and without hair variants",
+{"note": "MARROW-S1.0 16 mm big run: VAE 12k -> gate -> preparation with 2 hair variants -> generators N (t16) and NH (t16h) 25k -> scoring",
  "job": "field_suite_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main",
- "env": {"SUITE": "g_smoke16", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "16", "ARCH": "tvae", "WARMUP": "1", "HAIR": "1",
-         "ARMS": "N,NH", "SEEDS": "0", "AE_STEPS": "200", "STEPS": "200", "LIMIT_HEADS": "2", "TEST_LIMIT": "1", "SHARDS": "2", "GATE_HEADS": "1", "MAXPAR": "2", "GPU_LOG": "120"}}
+ "env": {"SUITE": "marrow_s1_0_t16", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "16", "ARCH": "tvae", "WARMUP": "1", "HAIR": "2",
+         "ARMS": "N,NH", "SEEDS": "0", "AE_STEPS": "12000", "STEPS": "25000", "SHARDS": "4", "GATE_HEADS": "4", "MAXPAR": "2", "GPU_LOG": "300", "HEARTBEAT": "600"}}
