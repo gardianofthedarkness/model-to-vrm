@@ -585,3 +585,20 @@ field for fat thickness):
 - **Medical branch (later).** The current fine tissue-type model plus the refiner stage (14.8, 14.9), after the decoder
   bias is fixed (volume check in the gate).
 No training until the user says so.
+
+**Game branch, whole body (user agreed, 2026-11-27).** The same idea per region, physics compartments only:
+head (as above); neck (spine, airway and oesophagus, main neck muscles per side, fat layer); chest (rib cage and spine
+rigid, lungs as air that changes volume with breathing, heart and mediastinum as one mass, chest muscles, breasts as a fat
+mass); belly (spine, viscera as one soft mass that sloshes and settles, belly-wall muscles, fat layer); pelvis and hips
+(pelvis rigid, buttocks as muscle plus fat mass, hip muscles); limbs (each bone rigid, muscle groups per segment: thigh
+front and back, calf, upper arm front and back, forearm; fat layer).
+- **Skeleton from the character's rig** (VRM): the model gets shell plus skeleton and fills in between bone and skin.
+- **One stream, coarse tokens:** a whole adult body is about 70 L, about 140,000 tokens at 8 mm (too many for full
+  attention) but about 17,000 at 16 mm (the elf head today). Whole body at 16 mm in one stream (MAGI-2 lesson, 14.8), no
+  seams; refiner near joints only if needed.
+- **Pose:** generate in the character's rest pose; training bodies are placed per bone segment in that frame.
+- **Data:** trunk well covered (TotalSegmentator: bones, main muscles, organs, and its tissue-types task); head and neck
+  as now; limbs scarce in CT (scans stop at the trunk, arms often outside) but anatomically simple, so an atlas warped
+  to the character fills limbs while the learned model covers head and trunk. Breathing motion from public 4D lung CT.
+- **Output for the simulation:** per compartment a small low-poly volume bound to its bones, plus a fat-thickness map
+  over the skin: what a fast soft-body solver needs at runtime (minimum compute).
