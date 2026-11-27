@@ -1,4 +1,4 @@
-{"note": "MARROW-S1.0 16 mm big run: VAE 12k -> gate -> preparation with 2 hair variants -> generators N (t16) and NH (t16h) 25k -> scoring",
+{"note": "MARROW-S1.0 8 mm big run: VAE 12k -> gate -> preparation with 2 hair variants -> generators N (t8) and NH (t8h) 25k -> scoring",
  "job": "field_suite_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main",
- "env": {"SUITE": "marrow_s1_0_t16", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "16", "ARCH": "tvae", "WARMUP": "1", "HAIR": "2",
+ "env": {"SUITE": "marrow_s1_0_t8", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "8", "ARCH": "tvae", "WARMUP": "1", "HAIR": "2",
          "ARMS": "N,NH", "SEEDS": "0", "AE_STEPS": "12000", "STEPS": "25000", "SHARDS": "4", "GATE_HEADS": "4", "MAXPAR": "2", "GPU_LOG": "300", "HEARTBEAT": "600"}}
