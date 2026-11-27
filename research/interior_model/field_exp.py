@@ -37,7 +37,8 @@ def splits(idx, have=lambda c: True):
 def load_head(path):
     z = np.load(path); shape = tuple(z['shape']); n = int(np.prod(shape))
     unpack = lambda k: np.unpackbits(z[k])[:n].reshape(shape).astype(bool)
-    return dict(field=z['field'].astype(np.float32), eye=z['eye'].astype(np.float32) / 255.0, subcut=unpack('subcut'), unk=unpack('unk'), hard=z['hard'], shape=shape)
+    hard = z['hard']; unk = unpack('unk') | (hard == 255)   # old-label unknown is unknown: the scan-edge band (half a voxel at the field-of-view boundary) read as -1000 HU air otherwise (found 2026-11-27)
+    return dict(field=z['field'].astype(np.float32), eye=z['eye'].astype(np.float32) / 255.0, subcut=unpack('subcut'), unk=unk, hard=hard, shape=shape)
 
 def hard_classes(hard, eye_id):
     """old labels -> the seven classes (unknown 255 kept)"""
