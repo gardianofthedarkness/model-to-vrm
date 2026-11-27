@@ -6,7 +6,7 @@ Writes a picture and, with WEB, binary meshes + meshes.json for the 3D page (our
 args: <elf shell npz (labels 0 outside / tissue / 255 unknown)> <flow.pt> <autoencoder .pt> <out dir>  env: WEB, SEED"""
 import os, sys, json, numpy as np, torch
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from field_exp import make_ae, NC, NAMES, AMP
+from field_exp import make_ae, NC, NAMES, AMP, CLASSES
 from flow_f1 import Flow
 from transformer_smoke import sdf, tiles
 from skimage import measure
@@ -18,22 +18,25 @@ def stage(name):
 def prog(tag, i, n, t_start, every):
     if i % every == 0 or i == n - 1:
         el = time.time() - t_start; eta = el / (i + 1) * (n - i - 1); print('  %s %d/%d  elapsed %.1fs  left ~%.1fs' % (tag, i + 1, n, el, eta), flush=True)
-shellf, flowf, aef, out = sys.argv[1:5]; os.makedirs(out, exist_ok=True); dev = 'cuda'; F = 8; C = 8
+shellf, flowf, aef, out = sys.argv[1:5]; os.makedirs(out, exist_ok=True); dev = 'cuda'; C = 8
+ck = torch.load(aef, map_location=dev, weights_only=False); F = int(ck.get('F', 8))    # token size from the autoencoder (8 or 16 mm)
+assert ck.get('class_set', 'tissue') == CLASSES, 'set CLASSES=%s for this autoencoder' % ck.get('class_set')
 L = np.load(shellf)['labels']; G = [n // F for n in L.shape]; L = L[:G[0] * F, :G[1] * F, :G[2] * F]
 outside = L == 0; unk = L == 255; body = ~outside & ~unk
-ck = torch.load(aef, map_location=dev); ae = make_ae(soft=(ck['kind'] == 'soft'), arch=ck.get('arch', 'conv')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
+ae = make_ae(F=F, soft=(ck['kind'] == 'soft'), arch=ck.get('arch', 'conv')).to(dev); ae.load_state_dict(ck['state_dict']); ae.eval()
 fl = torch.load(flowf, map_location=dev, weights_only=False);   # our own checkpoint (mu, sd are numpy)
 net = Flow(65, C, NC, 384, 8).to(dev); net.load_state_dict(fl['state_dict']); net.eval(); mu, sd = fl['mu'], fl['sd']
 stage('load models')
 # shell tokens (field_prep.py): unknown below the head counts as body (the body continues there)
-S = np.where(outside, 0, 3).astype(np.uint8); D = sdf(S, 1.0); stage('distance to skin (CPU)'); known = (~unk).astype(np.float32)
+S = np.where(outside | (unk if CLASSES == 'game' else False), 0, 3).astype(np.uint8)   # game: as field_prep (unknown is not body)
+D = sdf(S, 1.0); stage('distance to skin (CPU)'); known = (~unk).astype(np.float32)
 blk = lambda A: A.reshape(G[0], F, G[1], F, G[2], F).transpose(0, 2, 4, 1, 3, 5)
 tok = np.argwhere(blk(body).reshape(*G, -1).any(-1)); p = F // 4
 Dp = blk(D).reshape(*G, 4, p, 4, p, 4, p).mean((4, 6, 8))
 feat = np.concatenate([Dp[tuple(tok.T)].reshape(len(tok), -1), blk(known).reshape(*G, -1).mean(-1)[tuple(tok.T)][:, None]], 1).astype(np.float32)
 pos = ((tok + 0.5) * F / 100.0).astype(np.float32); print('tokens', len(tok), flush=True); stage('shell tokens (CPU)')
 # context codes for cells without tokens: the autoencoder's code of a plain shell (outside / lean)
-x = torch.zeros((1, NC, *L.shape), device=dev); x[0, 0] = torch.tensor(outside, device=dev).float(); x[0, 3] = 1 - x[0, 0]
+x = torch.zeros((1, NC, *L.shape), device=dev); x[0, 0] = torch.tensor(outside, device=dev).float(); x[0, NAMES.index('other_soft') if CLASSES == 'game' else 3] = 1 - x[0, 0]
 grid = torch.zeros((C, *G), device=dev)
 with torch.no_grad():
     TL = list(tiles(G, 8, 2)); t1 = time.time()
@@ -70,8 +73,12 @@ P[:, ~body] = 0; P[0, ~body] = 1
 stage('decode probabilities (GPU)')
 np.savez_compressed(os.path.join(out, 'elf_probs.npz'), P=P, body=body); stage('save probabilities')
 lab = P.argmax(0); vols = {NAMES[k]: round(float((lab == k).sum()) / 1000, 1) for k in range(1, NC)}; print('volumes ml', vols, flush=True)
-COL = {'fat_under_skin': (0.98, 0.84, 0.45), 'fat_other': (1.0, 0.65, 0.2), 'lean': (0.78, 0.25, 0.22), 'air': (0.30, 0.60, 0.90), 'bone': (0.93, 0.89, 0.78), 'eye': (0.97, 0.97, 1.0)}
-STEP = {'fat_under_skin': 2, 'fat_other': 1, 'lean': 2, 'air': 1, 'bone': 1, 'eye': 1}
+COL_T = {'fat_under_skin': (0.98, 0.84, 0.45), 'fat_other': (1.0, 0.65, 0.2), 'lean': (0.78, 0.25, 0.22), 'air': (0.30, 0.60, 0.90), 'bone': (0.93, 0.89, 0.78), 'eye': (0.97, 0.97, 1.0)}
+STEP_T = {'fat_under_skin': 2, 'fat_other': 1, 'lean': 2, 'air': 1, 'bone': 1, 'eye': 1}
+COL_G = {'fat_layer': (0.98, 0.84, 0.45), 'skull': (0.93, 0.89, 0.78), 'mandible': (0.85, 0.75, 0.55), 'teeth': (1.0, 1.0, 0.92), 'eyes': (0.97, 0.97, 1.0),
+         'brain': (0.92, 0.62, 0.70), 'chew_left': (0.80, 0.22, 0.20), 'chew_right': (0.62, 0.15, 0.30), 'tongue': (0.95, 0.40, 0.45), 'airway': (0.30, 0.60, 0.90),
+         'spine': (0.70, 0.70, 0.62), 'other_bone': (0.60, 0.55, 0.45), 'other_soft': (0.72, 0.45, 0.40)}
+COL, STEP = (COL_G, {k: (2 if k in ('fat_layer', 'other_soft', 'brain') else 1) for k in COL_G}) if CLASSES == 'game' else (COL_T, STEP_T)
 ctr = np.argwhere(body).mean(0); man = []; web = os.environ.get('WEB')
 if web: os.makedirs(web, exist_ok=True)
 for k in range(1, NC):
@@ -82,11 +89,11 @@ for k in range(1, NC):
     if web:
         fn = '%s.bin' % nm; open(os.path.join(web, fn), 'wb').write(v.tobytes() + f.astype(np.uint32).tobytes())
         man.append(dict(group=nm, kind='smooth', file=fn, nv=int(len(v)), nf=int(len(f)), colour=COL[nm], ml=vols[nm]))
-if web: json.dump(dict(voxel_mm=1.0, model='N (new input, transformer VAE), 10,000 steps', meshes=man), open(os.path.join(web, 'meshes.json'), 'w'))
+if web: json.dump(dict(voxel_mm=1.0, model=os.environ.get('MODEL_NAME', os.path.basename(os.path.dirname(flowf))), meshes=man), open(os.path.join(web, 'meshes.json'), 'w'))
 # picture: three orthogonal slices through the eyes' centre
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-pal = np.array([[0, 0, 0], COL['fat_under_skin'], COL['fat_other'], COL['lean'], COL['air'], COL['bone'], COL['eye']])
-ec = np.argwhere(lab == 6).mean(0).astype(int) if (lab == 6).any() else (np.array(L.shape) // 2)
+pal = np.array([[0, 0, 0]] + [COL[n] for n in NAMES[1:]]); ke = NAMES.index('eyes' if CLASSES == 'game' else 'eye')
+ec = np.argwhere(lab == ke).mean(0).astype(int) if (lab == ke).any() else (np.array(L.shape) // 2)
 fig, axs = plt.subplots(1, 3, figsize=(18, 6))
 for ax, sl, t in zip(axs, [(ec[0], slice(None), slice(None)), (slice(None), ec[1], slice(None)), (slice(None), slice(None), ec[2])], ['sagittal', 'coronal', 'axial']):
     ax.imshow(pal[lab[sl]].transpose(1, 0, 2), origin='lower'); ax.set_title('elf, ' + t); ax.axis('off')
