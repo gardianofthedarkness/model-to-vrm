@@ -602,3 +602,30 @@ front and back, calf, upper arm front and back, forearm; fat layer).
   to the character fills limbs while the learned model covers head and trunk. Breathing motion from public 4D lung CT.
 - **Output for the simulation:** per compartment a small low-poly volume bound to its bones, plus a fat-thickness map
   over the skin: what a fast soft-body solver needs at runtime (minimum compute).
+
+### 14.12 Coarse then fine: a two-stage cascade (user agreed, 2026-11-27)
+
+This week showed one model doing both fails in a specific way: F1 had structure without detail (coherent jaw, muscles,
+brain; blocky, no thin fat), N had detail without structure (exact boundaries, but nothing stopped it filling hair with
+tissue or breaking the jaw; N at 30,000 steps is better but still less robust than F1 on the jaw and with hair). The
+fix, following the coarse-then-refine pattern of current 3D generators (14.9):
+
+| | Stage 1, coarse (game) | Stage 2, fine (medical, optional) |
+|---|---|---|
+| Predicts | named physics compartments (skull, mandible, teeth, eyes, brain, masseter and temporalis per side, tongue, airway, fat layer, other soft) | the continuous tissue field inside and around them: fat / lean / bone / air boundaries, thin fat, fascia lines, fat inside muscle |
+| Detail | 8 mm tokens, boundaries smoothed to about 4 mm | 1 mm (later 0.5 mm), mainly in a band around boundaries |
+| Conditioned on | shell with hair and cloth augmentation; for game characters also the rig skeleton | shell + Stage 1's compartments |
+| Learns from | the named labels every head already has | the continuous CT fields (head_fields_v1, band fix) |
+| Model | transformer VAE + flow transformer | refiner trained on true coarse compartments with noise added (Seed3D 2.0, UltraShape), local attention |
+| Judged on | volumes, positions, one piece per bone and muscle side, fat-layer thickness, the user's look at the elf | surface distances, thin fat, volume check |
+
+Detail cannot break structure (Stage 2 refines inside what Stage 1 placed); robustness to hair, cloth and stylised
+proportions lives in Stage 1 only (augmentation); each stage has its own gate. Whole body later adds one level: 16 mm
+tokens over the whole body in one stream for the big compartments, 8 mm per region, 1 mm where medicine needs it;
+games stop after level 1 or 2.
+
+**First test (Stage 1):** G1 compartments without hair augmentation, G1+H with it (extra outer shell volume added at
+random on scalp, back of head and neck, up to the measured gap of about 2.5 L, interior targets unchanged); transformer
+VAE, 25-30k steps, band fix, gate with a volume check, topology term only (one piece per compartment) instead of the
+full shell loss. Scored on test heads and on the elf against F1 and N at 30k. Smoke on a T4 first; cost table before the
+L40S run.
