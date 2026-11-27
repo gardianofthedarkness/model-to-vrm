@@ -629,3 +629,24 @@ random on scalp, back of head and neck, up to the measured gap of about 2.5 L, i
 VAE, 25-30k steps, band fix, gate with a volume check, topology term only (one piece per compartment) instead of the
 full shell loss. Scored on test heads and on the elf against F1 and N at 30k. Smoke on a T4 first; cost table before the
 L40S run.
+
+### 14.13 Check 0 and the Stage 2 rule: diffusion forcing (2026-11-27)
+
+**Check 0** (`gen_gap.py`, MARROW-S1.0-t16h-k25, 12 validation and 8 training heads). Generated codes lie on the
+decoder's code set: nearest training code 0.46 against 0.47 for true codes; round trip 0.40 against 0.37. So S1.1a
+(decoder fine-tune) is skipped, and S1.1b is held: it would fit the same training heads harder. The gap is unseen heads.
+On training heads the skull scores 0.85 and the mandible 0.84; on validation heads 0.77 and 0.74 (ceiling 0.90). Two draws
+agree with each other (0.87) more than with the truth (0.77). Next: more heads (IXI MRI with an MRI-to-compartment
+labeller gated per compartment; PDDCA), mirrored heads and regularisation.
+
+**Stage 2 rule (user, 2026-11-27).** A detail model that builds on generated coarse output drifts if it was trained only on
+clean coarse truth: at use time it reads Stage 1's own errors, which it never saw. The fix is **diffusion forcing** (Chen
+et al. 2024). Every condition token carries its own noise level, drawn independently per token in training and given to
+the model as an input, so the detail stage learns Stage 1 at every point of the flow and how far to trust it. Design:
+- **Conditioning.** Stage 2 reads Stage 1's codes noised per token, z_c = (1 - tau_i) eps + tau_i z1, with tau_i an input.
+  Honest Stage 1 samples can be added: generated for each head by a Stage 1 trained without that head's fold.
+- **Joint denoising.** Coarse and fine tokens sit in one sequence with separate noise levels. At use time coarse tokens
+  may be held partly noised while the fine tokens denoise, so the detail stage can correct coarse errors.
+- **No hand-set level.** The condition noise level at use time is chosen on validation heads.
+- **Same rule elsewhere.** Region-by-region whole-body generation (head, neck, trunk; the seam test, 14.3) and the teeth
+  stage (teeth placed inside the generated jaw, ToothFairy3 adults, in the mandible's frame) are built the same way.
