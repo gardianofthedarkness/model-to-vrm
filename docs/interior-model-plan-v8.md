@@ -557,3 +557,31 @@ built hurts badly; suspected causes: applied at every noise level (the one-step 
 possibly non-zero even for perfect codes (pulling codes off the decoder's space). Next: apply it only near the end of
 the noise schedule and check its value on true codes, as a small test. (3) Masked partial faces changed little next to
 NS (air a little worse, plausibly the masked nasal airway); a fair test adds them to N, without the shell loss.
+
+### 14.11 Two goals, two branches (user, 2026-11-27)
+
+**What the views showed.** On a real test head (HaN-Seg case_01, never seen in training) N's generated interior looks
+right: skull, orbits and eyes, jaw and airway in place. Faults: the transformer VAE over-calls thin fat about 5.6x (741
+against 132 ml; the generator inherits it; likely the rare-class weights in autoencoder training) and eyes and bone
+slightly. On the elf the result looked noisy and filled: her shell counts her hair as head (9.0 L against 6.0-7.4 L for
+real heads) and her proportions are stylised, a gap in shell types that more CT heads will not close. The earlier F1
+elf (named structures) looked more coherent to the user.
+
+**Data bug found and fixed:** a one-voxel band at each scan's field-of-view edge was old-label unknown (255) but not in
+the unknown mask, so the continuous field read it as -1000 HU air: about 44 ml of fake air on case_01 (true air 48 ml).
+The models learned to draw it, and **N's reported air overlap (0.69) is inflated by it**; air scores must be redone
+after retraining with the fix (`field_exp.load_head`: old-label 255 is unknown).
+
+**Decision: two branches.** Medicine needs the detailed interior of one real person; games need the right physics
+compartments in plausible places and sizes. Same base (transformer VAE, flow transformer, gate, band fix, continuous
+field for fat thickness):
+- **Game branch (first).** Coarse only. Targets: about 10 physics compartments taken from the existing named labels
+  (as F1 used), boundaries smoothed to about 4 mm: skull, jaw, teeth, eyes, brain, chewing muscles (masseter and
+  temporalis, one piece per side), tongue, airway, the fat layer under the skin (as a thickness map), other soft tissue.
+  Scored on what physics needs: compartment volumes, centres, one piece per muscle and side, fat-layer thickness, and
+  the user's look at the elf; not voxel overlap. Feeds the flesh simulation (rigid bone, muscle volumes with
+  attachments, fat thickness, cavities). Shell augmentation (smoothing, scale, proportions) and a hair-free shell for
+  stylised characters belong here.
+- **Medical branch (later).** The current fine tissue-type model plus the refiner stage (14.8, 14.9), after the decoder
+  bias is fixed (volume check in the gate).
+No training until the user says so.
