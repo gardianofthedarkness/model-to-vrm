@@ -1,4 +1,4 @@
-{"note": "Stage 1 smoke: compartments, 8 mm tokens, tiny steps, with and without hair variants",
- "job": "field_suite_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "7b261a4d515a4d9bfdb1cda43813ce5f95673538",
- "env": {"SUITE": "g_smoke8", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "8", "ARCH": "tvae", "WARMUP": "1", "HAIR": "1",
+{"note": "MARROW-S1.0 check: 16 mm tokens, tiny steps, with and without hair variants",
+ "job": "field_suite_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main",
+ "env": {"SUITE": "g_smoke16", "FIELDS": "game_v1", "CLASSES": "game", "TOK": "16", "ARCH": "tvae", "WARMUP": "1", "HAIR": "1",
          "ARMS": "N,NH", "SEEDS": "0", "AE_STEPS": "200", "STEPS": "200", "LIMIT_HEADS": "2", "TEST_LIMIT": "1", "SHARDS": "2", "GATE_HEADS": "1", "MAXPAR": "2", "GPU_LOG": "120"}}
