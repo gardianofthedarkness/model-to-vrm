@@ -1,1 +1,1 @@
-{"note": "nothing queued (check 0 for MARROW-S1.1a finished 2026-11-27); this job name does not exist on purpose, so a stale Run all stops at once", "job": "none_queued.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {}}
+{"note": "IXI step 1 SMOKE: MRI-to-compartment labeller on 5 HaN-Seg people, 60 steps per fold (plumbing check, ~10 min)", "job": "mri_game_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"LIMIT": "5", "STEPS": "60"}}
