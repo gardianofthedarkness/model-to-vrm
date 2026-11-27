@@ -1,0 +1,49 @@
+{
+ "model": "MARROW-1.0-head",
+ "registry_code": "MARROW-S1.0-t16h-k25",
+ "token_mm": 16,
+ "latent_channels": 8,
+ "voxel_mm": 1.0,
+ "compartments": [
+  "outside",
+  "fat_layer",
+  "skull",
+  "mandible",
+  "teeth",
+  "eyes",
+  "brain",
+  "chew_left",
+  "chew_right",
+  "tongue",
+  "airway",
+  "spine",
+  "other_bone",
+  "other_soft"
+ ],
+ "shell_feature_dim": 65,
+ "generator_width": 384,
+ "generator_layers": 8,
+ "sampling_steps": 16,
+ "latent_mean": [
+  -0.09708405286073685,
+  0.029092010110616684,
+  -0.014967717230319977,
+  -0.17209991812705994,
+  -0.15953879058361053,
+  -0.020725199952721596,
+  -0.051965467631816864,
+  -0.03939307853579521
+ ],
+ "latent_std": [
+  1.0061991214752197,
+  1.1685014963150024,
+  0.959034264087677,
+  1.1269936561584473,
+  1.0456420183181763,
+  1.024509310722351,
+  0.9296919107437134,
+  0.9458419680595398
+ ],
+ "vae_steps": 12000,
+ "generator_steps": 25000
+}
