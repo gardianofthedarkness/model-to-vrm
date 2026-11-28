@@ -1,1 +1,1 @@
-{"note": "nothing queued (IXI normalisation check finished 2026-11-27); this job name does not exist on purpose, so a stale Run all stops at once", "job": "none_queued.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {}}
+{"note": "Contrastive labeller SMOKE: 5 HaN-Seg people, 6 IXI heads, 40 steps, fold 0 (plumbing, ~15 min)", "job": "mri_contrast_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "e5069f5e2e42a2704df3ddc7b2317b1364e59dbf", "env": {"LIMIT": "5", "STEPS": "40", "FOLDS": "0", "N_IXI": "6"}}
