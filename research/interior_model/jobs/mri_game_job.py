@@ -58,7 +58,8 @@ def stage1(case):
         ov, conv, Lr = best_t
         T = LUT[Lr].copy(); T[Lr == CANAL[0]] = NG; T[Lr == CANAL[1]] = NG + 1; T[~fov] = IGN
         lo, hi = np.percentile(M[fov & body], [0.5, 99.5]) if (fov & body).any() else (0, 1); Mn = np.clip((M - lo) / max(hi - lo, 1e-6), 0, 1).astype(np.float16); Mn[~fov] = 0
-        np.savez_compressed('%s/%s.npz' % (W, case), M=Mn, T=T, metric=best[0], body_overlap=ov, conv=conv)
+        cv = sitk.GetArrayFromImage(ctr); clo, chi = np.percentile(cv[body], [0.5, 99.5]); Cn = np.clip((cv - clo) / max(chi - clo, 1e-6), 0, 1).astype(np.float16)   # CT on the same grid (contrastive anchor)
+        np.savez_compressed('%s/%s.npz' % (W, case), M=Mn, T=T, C=Cn, metric=best[0], body_overlap=ov, conv=conv)
         return case, (None, ov, conv)
     except Exception as e: return case, ('%s %s' % (type(e).__name__, str(e)[:200]), None, None)
 
