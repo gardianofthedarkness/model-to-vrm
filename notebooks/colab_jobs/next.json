@@ -1,1 +1,1 @@
-{"note": "PDDCA S1 labelling SMOKE: 3 CTs, TotalSegmentator head tasks + general model, expert outlines, head frame, QC. ~10-20 min", "job": "pddca_s1_job.py", "repo_suffix": "pddca-ct", "commit": "fed879a82897d8540a7d3fdced96aef4670e5f45", "env": {"LIMIT": "3"}}
+{"note": "PDDCA S1 labelling SMOKE 2: body from TotalSegmentator body model. 3 CTs. ~10 min", "job": "pddca_s1_job.py", "repo_suffix": "pddca-ct", "commit": "0c6f0f94e109f246605249a6fb02b12106cfebaf", "env": {"LIMIT": "3"}}
