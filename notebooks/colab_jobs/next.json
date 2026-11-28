@@ -1,1 +1,1 @@
-{"note": "PDDCA S1 labelling FULL: all 48 CTs, TotalSegmentator head + body + general models, expert outlines, head frame, QC. ~1 h on L4", "job": "pddca_s1_job.py", "repo_suffix": "pddca-ct", "commit": "b1a7d0d3b57c730446166f5b316dc4d361da3a1e", "env": {"PAR": "2"}}
+{"note": "MARROW-1.0 test on unseen PDDCA: control = release 15 test heads (must match card), then all 48 PDDCA heads. seed 0, 16 steps", "job": "marrow_eval_job.py", "repo_suffix": "pddca-ct", "commit": "434f39ae4c843cf9597c0299b9d131ad2d976380", "env": {}}
