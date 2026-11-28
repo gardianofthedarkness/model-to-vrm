@@ -28,6 +28,17 @@ def game_targets(cls):
     c = cls.long(); known = (c != UNK).float()
     return F_.one_hot(c.clamp(max=GNC - 1), GNC).permute(0, 4, 1, 2, 3).float() * known[:, None]
 
+def mirror_labels(L, lo_x, ids):
+    """left-right mirror of a head-frame label volume about the frame's mid-plane (x = 0, halfway between the ear canals),
+    with every left/right class pair swapped. Voxels that land outside the window are dropped; uncovered ones are unknown."""
+    lut = np.arange(256, dtype=np.uint8)
+    for n, k in ids.items():
+        for a, b in (('_left', '_right'), ('_L', '_R')):
+            if n.endswith(a) and n[:-len(a)] + b in ids: o = ids[n[:-len(a)] + b]; lut[k], lut[o] = o, k
+    nx = L.shape[0]; i = np.arange(nx); j = int(round(-2 * lo_x)) - 1 - i             # x = lo + i + 0.5  ->  -x
+    M = np.full_like(L, UNK); ok = (j >= 0) & (j < nx); M[j[ok]] = lut[L[i[ok]]]
+    return M
+
 def assemble(out, ts_repo='gardianofthedarkness/totalsegmentator-ct-v201', hs_repo='gardianofthedarkness/hanseg-ct-mr', limit=0):
     """the 103 named-label heads (TotalSegmentator 61 + HaN-Seg 42, F1's set) in one folder with index.json; splits as F1
     (TotalSegmentator: its own; HaN-Seg: i % 5 test / val / train, as every earlier run)"""
@@ -44,6 +55,17 @@ def assemble(out, ts_repo='gardianofthedarkness/totalsegmentator-ct-v201', hs_re
         shutil.copy(os.path.join(d1, 'face_v1_headframe', c + '.npz'), os.path.join(out, c + '.npz')); heads[c] = dict(source='ts', split=fi['heads'][c].get('split') or 'train')
     for i, c in enumerate(hs):
         shutil.copy(os.path.join(d2, 'face_v1_headframe', c + '.npz'), os.path.join(out, c + '.npz')); heads[c] = dict(source='hanseg', split='test' if i % 5 == 0 else 'val' if i % 5 == 1 else 'train')
+    if os.environ.get('GAME_PDDCA'):                                  # PDDCA's 48 full faces with named labels (pddca_s1_job.py); its own splits
+        pr = os.environ['GAME_PDDCA']; pi = json.load(open(hf_hub_download(pr, 'face_v1_headframe_s1/index_pddca_s1.json', repo_type='dataset')))['heads']
+        pd = sorted(pi)[:limit] if limit else sorted(pi)
+        d3 = snapshot_download(pr, repo_type='dataset', allow_patterns=['face_v1_headframe_s1/%s.npz' % c for c in pd], local_dir='/data/g_pd', max_workers=16)
+        for c in pd:
+            shutil.copy(os.path.join(d3, 'face_v1_headframe_s1', c + '.npz'), os.path.join(out, c + '.npz')); heads[c] = dict(source='pddca', split=pi[c]['split'])
+    if os.environ.get('GAME_MIRROR'):                                 # mirrored copies of the training heads only (never of val / test heads)
+        for c in [c for c, v in heads.items() if v['split'] == 'train']:
+            L = np.load(os.path.join(out, c + '.npz'))['labels']
+            np.savez_compressed(os.path.join(out, c + '_m.npz'), labels=mirror_labels(L, fi['window_lo_mm'][0], fi['ids']))
+            heads[c + '_m'] = dict(heads[c], mirror_of=c)
     json.dump(dict(heads=heads, names=GNAMES, window_lo_mm=fi['window_lo_mm'], window_hi_mm=fi['window_hi_mm'], voxel_mm=1.0), open(os.path.join(out, 'index.json'), 'w'), indent=1)
     return heads
 
