@@ -1,1 +1,1 @@
-{"note": "IXI step 1 pictures (PRIVATE): 4 held-out HaN-Seg people (MRI | CT truth | MRI-only prediction) and 8 IXI subjects (MRI | prediction), ~10 min", "job": "mri_game_pics_job.py", "repo_suffix": "hanseg-ct-mr", "commit": "main", "env": {"N": "4"}}
+{"note": "IXI normalisation check (PRIVATE pictures): labeller on old vs N4+histogram-normalised IXI, 80 heads volume QC + 8 pictures, ~15 min", "job": "ixi_norm_check_job.py", "repo_suffix": "ixi-t1-t2", "commit": "64ad197075a5efe0fc0eadd8e60726a84006887e", "env": {"K": "80", "N": "4"}}
