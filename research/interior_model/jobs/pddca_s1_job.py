@@ -6,7 +6,8 @@ training (user 2026-11-28: "label them and use them for training"). GPU (Colab).
 (face_set_job.one_hanseg + face_frames.py):
   1. TotalSegmentator's three head tasks (craniofacial_structures, head_glands_cavities, head_muscles) and its general
      model for brain, trachea, spinal cord and C1-C7 (painted only over plain tissue, as the HaN-Seg repair).
-  2. Brightness classes 0-5 under them (body mask, fat, lean, gas, dense), as labels_job.
+  2. Brightness classes 0-5 under them (fat, lean, gas, dense), as labels_job, inside the body from TotalSegmentator's body
+     model: a brightness body mask took in the head rest and the radiotherapy face mask (smoke: airway 683 ml, training heads ~130).
   3. PDDCA's expert outlines replace the equivalent class (mandible, parotids, submandibular glands, optic nerves);
      brainstem and chiasm are added as the expert-only classes. Teeth and lenses are never overwritten.
   4. Head frame from the ear canals and eyes (face_frames.frame), labels resampled at 1 mm into the shared window of
@@ -34,7 +35,18 @@ def segment(ctp, outp):
     out = {}
     for t in HEAD_TASKS: out[t] = np.asarray(totalsegmentator(ctp, None, task=t, quiet=True, nr_thr_resamp=1, nr_thr_saving=1).dataobj).astype(np.uint8)
     out['total'] = np.asarray(totalsegmentator(ctp, None, task='total', roi_subset=TOTAL_ROI, quiet=True, nr_thr_resamp=1, nr_thr_saving=1).dataobj).astype(np.uint8)
+    out['body'] = np.asarray(totalsegmentator(ctp, None, task='body', quiet=True, nr_thr_resamp=1, nr_thr_saving=1).dataobj).astype(np.uint8)
     np.savez_compressed(outp, **out)
+
+def body_from_ts(Sb):
+    """the person only: TotalSegmentator's body model (head rest, couch and the radiotherapy face mask are not body), its
+    largest piece, holes filled per slice as face_set_job.body_mask"""
+    from scipy.ndimage import label, binary_fill_holes
+    lab, n = label(Sb > 0)
+    if n == 0: return None
+    M = lab == (np.bincount(lab.ravel())[1:].argmax() + 1)
+    for z in range(M.shape[2]): M[:, :, z] = binary_fill_holes(M[:, :, z])
+    return M
 
 def dice(a, b): s = a.sum() + b.sum(); return round(float(2 * (a & b).sum() / s), 3) if s else None
 
@@ -45,7 +57,9 @@ def build(case, ctp, mkp, segp, ids, lo, hi, cmap):
     im = sitk.ReadImage(ctp); A = sitk.GetArrayFromImage(im).transpose(2, 1, 0).astype(np.float32)          # (x, y, z) index, as nibabel
     mk = sitk.Resample(sitk.ReadImage(mkp), im, sitk.Transform(), sitk.sitkNearestNeighbor, 0); E = sitk.GetArrayFromImage(mk).transpose(2, 1, 0)
     S = dict(np.load(segp)); D = np.array(im.GetDirection()).reshape(3, 3) * np.array(im.GetSpacing()); aff = np.eye(4); aff[:3, :3] = D; aff[:3, 3] = im.GetOrigin()
-    B = fs.body_mask(A); Lb = fs.basic_labels(A, B); L = Lb.copy(); del A
+    B = body_from_ts(S['body'])
+    if B is None: B = fs.body_mask(A)
+    Lb = fs.basic_labels(A, B); L = Lb.copy(); del A
     inv = {t: {v: int(k) for k, v in cmap[t].items()} for t in HEAD_TASKS + ['total']}
     for t in HEAD_TASKS:
         for n, k in inv[t].items():
